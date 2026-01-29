@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Spotify-like palette */
+  --bg-base: #121212;
+  --bg-elevated: #181818;
+  --bg-card: #282828;
+  --bg-hover: #333333;
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --text-muted: #6b6b6b;
+  --accent: #1db954;
+  --accent-hover: #1ed760;
+  --accent-dim: #169c46;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+/* Range inputs - Spotify green track */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  margin-top: -4px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus::-webkit-slider-thumb {
+  opacity: 1;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:focus::-moz-range-thumb {
+  opacity: 1;
+}
+
+/* Progress bar fill (green) - we use a gradient or accent for the "filled" part via JS/width; for range we style track. For a custom progress bar we'd use a div. Here we keep range and use accent for thumb when active. */
+.range-accent::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), var(--bg-hover) var(--progress, 0%));
+}
+.range-accent::-moz-range-track {
+  background: var(--bg-hover);
+}
