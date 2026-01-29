@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import type { Track } from '@/lib/supabase'
 
 function formatTime(sec: number): string {
@@ -37,6 +38,20 @@ export function BottomPlayerBar({
   const duration = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0
   const maxSeek = Math.max(duration, currentTimeSec + 10, 60)
   const displayDuration = duration > 0 ? formatTime(duration) : '--:--'
+  const clampedTime = Math.max(0, Math.min(currentTimeSec, maxSeek))
+
+  const [liveTime, setLiveTime] = useState(clampedTime)
+  useEffect(() => {
+    setLiveTime(clampedTime)
+  }, [clampedTime])
+  useEffect(() => {
+    if (!isPlaying || !audioRef.current) return
+    const tick = () => {
+      if (audioRef.current) setLiveTime(audioRef.current.currentTime)
+    }
+    const id = setInterval(tick, 200)
+    return () => clearInterval(id)
+  }, [isPlaying, audioRef])
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value)
@@ -49,6 +64,7 @@ export function BottomPlayerBar({
   }
 
   const trackTitle = currentTrack?.title ?? (firstTrack ? 'Tap play to start' : 'No track selected')
+  const showTime = isPlaying ? liveTime : clampedTime
 
   return (
     <footer
@@ -62,37 +78,19 @@ export function BottomPlayerBar({
           min={0}
           max={maxSeek}
           step={0.1}
-          value={currentTimeSec}
+          value={showTime}
           onChange={handleSeek}
           className="w-full h-1 cursor-pointer accent-[#1db954]"
         />
         <div className="flex justify-between text-xs text-[#b3b3b3] -mt-0.5 px-0.5">
-          <span className="tabular-nums">{formatTime(currentTimeSec)}</span>
+          <span className="tabular-nums">{formatTime(showTime)}</span>
           <span className="tabular-nums">{displayDuration}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-3 items-center gap-4 px-4 py-3 max-w-7xl mx-auto">
-        {/* Left: track info + art */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-14 h-14 flex-shrink-0 rounded bg-[#282828] overflow-hidden flex items-center justify-center">
-            {currentTrack?.thumbnail_url ? (
-              <img
-                src={currentTrack.thumbnail_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <svg
-                className="w-8 h-8 text-[#535353]"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden
-              >
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-              </svg>
-            )}
-          </div>
+        {/* Left: track title only */}
+        <div className="flex items-center min-w-0">
           <div className="min-w-0">
             <p className="text-sm font-medium text-white truncate">{trackTitle}</p>
             <p className="text-xs text-[#b3b3b3] truncate">
@@ -101,7 +99,7 @@ export function BottomPlayerBar({
           </div>
         </div>
 
-        {/* Center: playback controls - truly centered */}
+        {/* Center: playback controls */}
         <div className="flex items-center justify-center gap-2 justify-self-center">
           <button
             type="button"
@@ -141,7 +139,7 @@ export function BottomPlayerBar({
           </button>
         </div>
 
-        {/* Right: volume */}
+        {/* Right: volume - thumb always visible */}
         <div className="flex items-center gap-2 w-32 justify-self-end">
           <svg
             className="w-5 h-5 text-[#b3b3b3] flex-shrink-0"
@@ -157,7 +155,7 @@ export function BottomPlayerBar({
             step={0.05}
             defaultValue={1}
             onChange={handleVolume}
-            className="flex-1 h-1 cursor-pointer accent-[#1db954]"
+            className="flex-1 h-1 cursor-pointer accent-[#1db954] volume-slider"
           />
         </div>
       </div>
