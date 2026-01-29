@@ -21,7 +21,8 @@ export function usePlaybackSync(
   audioRef: React.RefObject<HTMLAudioElement | null>,
   tracks: Track[],
   initialRoomState: RoomState | null,
-  onQueueUpdated?: () => void
+  onQueueUpdated?: () => void,
+  onSkipFromOther?: (direction: 'next' | 'previous') => void
 ) {
   const [state, setState] = useState<PlaybackState>({
     currentTrackId: initialRoomState?.current_track_id ?? null,
@@ -111,7 +112,8 @@ export function usePlaybackSync(
     if (!list.length) return null
     const idx = list.findIndex((t) => t.id === current)
     if (idx < 0) return list[0]?.id ?? null
-    return list[idx + 1]?.id ?? null
+    // When at last track, loop to first so queue auto-advances
+    return list[idx + 1]?.id ?? list[0]?.id ?? null
   }, [state.currentTrackId])
 
   const getPreviousTrackId = useCallback(() => {
@@ -181,10 +183,12 @@ export function usePlaybackSync(
             break
           case 'NEXT':
             pendingSyncRef.current = null
+            onSkipFromOther?.('next')
             applyNext()
             break
           case 'PREVIOUS':
             pendingSyncRef.current = null
+            onSkipFromOther?.('previous')
             applyPrevious()
             break
           case 'QUEUE_UPDATED':
@@ -202,7 +206,7 @@ export function usePlaybackSync(
       channelRef.current = null
       supabase.removeChannel(channel)
     }
-  }, [roomCode, clientId, applyPlay, applyPause, applySeek, applyNext, applyPrevious, onQueueUpdated])
+  }, [roomCode, clientId, applyPlay, applyPause, applySeek, applyNext, applyPrevious, onQueueUpdated, onSkipFromOther])
 
   // When we receive PLAY/SEEK but didn't have the track, we refetched queue; apply pending sync once we have the track
   useEffect(() => {

@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createRoom } from '@/hooks/use-room'
+import { parseRoomCodeOrUrl } from '@/lib/room-url'
 
 export default function HomePage() {
   const router = useRouter()
-  const [joinCode, setJoinCode] = useState('')
+  const [joinInput, setJoinInput] = useState('')
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,9 +28,9 @@ export default function HomePage() {
   function handleJoinRoom(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    const code = joinCode.trim().toUpperCase()
+    const code = parseRoomCodeOrUrl(joinInput)
     if (!code) {
-      setError('Enter a room code')
+      setError('Paste the room link or enter the room code')
       return
     }
     setJoining(true)
@@ -49,7 +50,7 @@ export default function HomePage() {
             type="button"
             onClick={handleCreateRoom}
             disabled={creating}
-            className="w-full py-4 px-6 rounded-full bg-[#1db954] text-black font-bold hover:bg-[#1ed760] disabled:opacity-50 transition text-lg"
+            className="w-full py-4 px-6 rounded-full bg-[var(--accent)] text-black font-bold hover:bg-[var(--accent-hover)] disabled:opacity-50 transition text-lg"
           >
             {creating ? 'Creating…' : 'Create Room'}
           </button>
@@ -57,18 +58,17 @@ export default function HomePage() {
           <div className="relative py-4">
             <span className="absolute left-0 right-0 top-1/2 h-px bg-[#282828]" />
             <span className="relative block text-sm text-[#6b6b6b] bg-[#121212] w-fit mx-auto px-2">
-              or join with a code
+              or paste room link
             </span>
           </div>
 
           <form onSubmit={handleJoinRoom} className="flex gap-2">
             <input
               type="text"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="e.g. ABC123"
-              maxLength={6}
-              className="flex-1 py-3 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[#1db954] focus:outline-none text-center uppercase tracking-widest"
+              value={joinInput}
+              onChange={(e) => setJoinInput(e.target.value)}
+              placeholder="Paste room URL or code (e.g. ABC123)"
+              className="flex-1 min-w-0 py-3 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[var(--accent)] focus:outline-none"
             />
             <button
               type="submit"

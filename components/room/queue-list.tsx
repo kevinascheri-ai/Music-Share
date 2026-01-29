@@ -67,7 +67,7 @@ function SortableTrack({
       </button>
       <span
         className={`flex-shrink-0 w-6 text-sm tabular-nums ${
-          isCurrent ? 'text-[#1db954] font-semibold' : 'text-[#6b6b6b]'
+          isCurrent ? 'text-[var(--accent)] font-semibold' : 'text-[#6b6b6b]'
         }`}
       >
         {index + 1}
@@ -81,7 +81,7 @@ function SortableTrack({
         {track.title}
       </span>
       {isCurrent && (
-        <span className="flex-shrink-0 text-xs text-[#1db954] font-medium">
+        <span className="flex-shrink-0 text-xs text-[var(--accent)] font-medium">
           ● Now playing
         </span>
       )}

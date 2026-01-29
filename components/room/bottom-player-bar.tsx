@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@/lib/supabase'
 
 function formatTime(sec: number): string {
@@ -41,6 +41,8 @@ export function BottomPlayerBar({
   const clampedTime = Math.max(0, Math.min(currentTimeSec, maxSeek))
 
   const [liveTime, setLiveTime] = useState(clampedTime)
+  const [volume, setVolume] = useState(1)
+  const volumeInitialized = useRef(false)
   useEffect(() => {
     setLiveTime(clampedTime)
   }, [clampedTime])
@@ -52,6 +54,12 @@ export function BottomPlayerBar({
     const id = setInterval(tick, 200)
     return () => clearInterval(id)
   }, [isPlaying, audioRef])
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || volumeInitialized.current) return
+    volumeInitialized.current = true
+    setVolume(audio.volume)
+  }, [audioRef])
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value)
@@ -60,7 +68,10 @@ export function BottomPlayerBar({
 
   const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value)
-    if (audioRef.current && !Number.isNaN(val)) audioRef.current.volume = val
+    if (!Number.isNaN(val)) {
+      setVolume(val)
+      if (audioRef.current) audioRef.current.volume = val
+    }
   }
 
   const trackTitle = currentTrack?.title ?? (firstTrack ? 'Tap play to start' : 'No track selected')
@@ -71,7 +82,7 @@ export function BottomPlayerBar({
       className="fixed bottom-0 left-0 right-0 z-50 bg-[#181818] border-t border-[#282828]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}
     >
-      {/* Progress bar - full width above controls */}
+      {/* Progress bar - full width above controls; orange fill on left */}
       <div className="px-4 pt-1">
         <input
           type="range"
@@ -80,7 +91,8 @@ export function BottomPlayerBar({
           step={0.1}
           value={showTime}
           onChange={handleSeek}
-          className="w-full h-1 cursor-pointer accent-[#1db954]"
+          className="range-accent w-full h-1 cursor-pointer accent-[var(--accent)]"
+          style={{ ['--progress' as string]: `${maxSeek > 0 ? (showTime / maxSeek) * 100 : 0}%` }}
         />
         <div className="flex justify-between text-xs text-[#b3b3b3] -mt-0.5 px-0.5">
           <span className="tabular-nums">{formatTime(showTime)}</span>
@@ -153,9 +165,10 @@ export function BottomPlayerBar({
             min={0}
             max={1}
             step={0.05}
-            defaultValue={1}
+            value={volume}
             onChange={handleVolume}
-            className="flex-1 h-1 cursor-pointer accent-[#1db954] volume-slider"
+            className="range-accent flex-1 h-1 cursor-pointer accent-[var(--accent)] volume-slider"
+            style={{ ['--progress' as string]: `${volume * 100}%` }}
           />
         </div>
       </div>

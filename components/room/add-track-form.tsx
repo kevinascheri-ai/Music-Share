@@ -54,26 +54,28 @@ export function AddTrackForm({ onAdd }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 pt-4 border-t border-[#282828]">
+    <form onSubmit={handleSubmit} className="space-y-2 pt-4 border-t border-[#282828]">
       <h3 className="text-lg font-semibold">Add to queue</h3>
-      <input
-        type="url"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        placeholder="Paste Suno link or direct audio URL"
-        required
-        className="w-full py-3 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[#1db954] focus:outline-none transition"
-      />
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Paste Suno link or direct audio URL"
+          required
+          className="flex-1 min-w-0 py-2.5 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[var(--accent)] focus:outline-none transition"
+        />
+        <button
+          type="submit"
+          disabled={submitting}
+          className="flex-shrink-0 py-2.5 px-4 rounded-lg bg-[var(--accent)] text-black font-semibold hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition"
+        >
+          {submitting ? '…' : 'Add track'}
+        </button>
+      </div>
       <p className="text-xs text-[#6b6b6b]">
-        Paste the link from Suno’s “Copy link” button or a direct .mp3/.m4a URL. We’ll use the song name from the link when available.
+        Paste the link from Suno’s “Copy link” button or a direct .mp3/.m4a URL.
       </p>
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full py-3 px-4 rounded-full bg-[#1db954] text-black font-semibold hover:bg-[#1ed760] disabled:opacity-50 disabled:cursor-not-allowed transition"
-      >
-        {submitting ? 'Resolving & adding…' : 'Add track'}
-      </button>
       {error && (
         <p className="text-sm text-red-400" role="alert">
           {error}

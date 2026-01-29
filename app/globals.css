@@ -11,9 +11,10 @@
   --text-primary: #ffffff;
   --text-secondary: #b3b3b3;
   --text-muted: #6b6b6b;
-  --accent: #1db954;
-  --accent-hover: #1ed760;
-  --accent-dim: #169c46;
+  /* Anaheim Ducks orange */
+  --accent: #F47A38;
+  --accent-hover: #f68a4d;
+  --accent-dim: #c4622d;
 }
 
 body {
@@ -58,10 +59,10 @@ input[type="range"]::-moz-range-thumb {
   opacity: 1;
 }
 
-/* Progress bar fill (green) - we use a gradient or accent for the "filled" part via JS/width; for range we style track. For a custom progress bar we'd use a div. Here we keep range and use accent for thumb when active. */
+/* Progress/volume bar: orange fill on the left (played/volume level), gray on the right. Set --progress (e.g. 45%) via inline style. */
 .range-accent::-webkit-slider-runnable-track {
   background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), var(--bg-hover) var(--progress, 0%));
 }
 .range-accent::-moz-range-track {
-  background: var(--bg-hover);
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), var(--bg-hover) var(--progress, 0%));
 }
