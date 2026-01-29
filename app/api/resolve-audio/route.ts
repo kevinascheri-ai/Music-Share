@@ -104,6 +104,19 @@ function extractAudioFromHtml(html: string, pageUrl: string): string | null {
   return null
 }
 
+function extractMetadataFromHtml(html: string): { title?: string; imageUrl?: string } {
+  const out: { title?: string; imageUrl?: string } = {}
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+  if (ogTitle?.[1]) out.title = ogTitle[1].trim()
+  const ogImage = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+  if (ogImage?.[1]) out.imageUrl = ogImage[1].trim()
+  const twitterTitle = html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i)
+  if (twitterTitle?.[1] && !out.title) out.title = twitterTitle[1].trim()
+  const twitterImage = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+  if (twitterImage?.[1] && !out.imageUrl) out.imageUrl = twitterImage[1].trim()
+  return out
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -123,12 +136,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL must be http or https' }, { status: 400 })
     }
 
-    // Already a direct audio URL - return as-is
+    // Already a direct audio URL - return as-is (no metadata)
     if (isLikelyDirectAudioUrl(url)) {
       return NextResponse.json({ directUrl: url })
     }
 
-    // Only resolve Suno share links
+    // Not a Suno link - return as-is
     if (!isSunoUrl(url)) {
       return NextResponse.json({
         directUrl: url,
@@ -185,7 +198,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ directUrl })
+    const metadata = extractMetadataFromHtml(html)
+    return NextResponse.json({
+      directUrl,
+      title: metadata.title,
+      imageUrl: metadata.imageUrl,
+    })
   } catch (err) {
     if (err instanceof SyntaxError) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })

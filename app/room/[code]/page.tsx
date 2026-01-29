@@ -104,8 +104,8 @@ export default function RoomPage() {
   )
 
   const handleAddTrack = useCallback(
-    async (title: string, url: string) => {
-      await addTrack(title, url)
+    async (title: string, url: string, thumbnailUrl?: string | null) => {
+      await addTrack(title, url, thumbnailUrl)
       playback.broadcastQueueUpdated()
     },
     [addTrack, playback]

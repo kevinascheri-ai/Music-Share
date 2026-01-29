@@ -14,6 +14,7 @@ export type Track = {
   title: string
   url: string
   order_index: number
+  thumbnail_url?: string | null
   created_at: string
 }
 export type RoomState = {

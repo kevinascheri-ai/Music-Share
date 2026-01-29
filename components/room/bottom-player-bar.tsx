@@ -72,18 +72,26 @@ export function BottomPlayerBar({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-4 px-4 py-3 max-w-7xl mx-auto">
+      <div className="grid grid-cols-3 items-center gap-4 px-4 py-3 max-w-7xl mx-auto">
         {/* Left: track info + art */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-14 h-14 flex-shrink-0 rounded bg-[#282828] flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-[#535353]"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden
-            >
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-            </svg>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-14 h-14 flex-shrink-0 rounded bg-[#282828] overflow-hidden flex items-center justify-center">
+            {currentTrack?.thumbnail_url ? (
+              <img
+                src={currentTrack.thumbnail_url}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <svg
+                className="w-8 h-8 text-[#535353]"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+              </svg>
+            )}
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-white truncate">{trackTitle}</p>
@@ -93,8 +101,8 @@ export function BottomPlayerBar({
           </div>
         </div>
 
-        {/* Center: playback controls */}
-        <div className="flex items-center justify-center gap-2 flex-shrink-0">
+        {/* Center: playback controls - truly centered */}
+        <div className="flex items-center justify-center gap-2 justify-self-center">
           <button
             type="button"
             onClick={onPrevious}
@@ -134,7 +142,7 @@ export function BottomPlayerBar({
         </div>
 
         {/* Right: volume */}
-        <div className="flex items-center gap-2 w-32 flex-shrink-0">
+        <div className="flex items-center gap-2 w-32 justify-self-end">
           <svg
             className="w-5 h-5 text-[#b3b3b3] flex-shrink-0"
             fill="currentColor"

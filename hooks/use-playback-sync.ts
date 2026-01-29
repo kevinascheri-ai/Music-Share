@@ -36,6 +36,7 @@ export function usePlaybackSync(
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const playingTrackIdRef = useRef<string | null>(initialRoomState?.current_track_id ?? null)
   const currentTrackIdRef = useRef<string | null>(initialRoomState?.current_track_id ?? null)
+  const pendingSyncRef = useRef<{ type: 'PLAY' | 'SEEK'; trackId: string; timeSec: number } | null>(null)
   currentTrackIdRef.current = state.currentTrackId
   tracksRef.current = tracks
 
@@ -55,9 +56,7 @@ export function usePlaybackSync(
         return
       }
       if (audio) {
-        if (audio.src !== tr.url) {
-          audio.src = tr.url
-        }
+        audio.src = tr.url
         audio.currentTime = timeSec
         audio.play().catch(() => {})
       }
@@ -153,24 +152,42 @@ export function usePlaybackSync(
         const payload: PlaybackEvent = (msg as { payload?: PlaybackEvent }).payload ?? (msg as PlaybackEvent)
         if (payload.clientId === clientId) return
 
-        const audio = audioRef.current
+        const trackId = payload.trackId ?? null
+        const timeSec = payload.timeSec ?? 0
+        const hasTrack = trackId ? tracksRef.current.some((t) => t.id === trackId) : false
+
         switch (payload.type) {
           case 'PLAY':
-            applyPlay(payload.trackId ?? null, payload.timeSec ?? 0)
+            if (hasTrack) {
+              applyPlay(trackId, timeSec)
+              pendingSyncRef.current = null
+            } else if (trackId) {
+              pendingSyncRef.current = { type: 'PLAY', trackId, timeSec }
+              onQueueUpdated?.()
+            }
             break
           case 'PAUSE':
-            applyPause(payload.timeSec ?? 0)
+            pendingSyncRef.current = null
+            applyPause(timeSec)
             break
           case 'SEEK':
-            applySeek(payload.trackId ?? null, payload.timeSec ?? 0)
+            if (hasTrack) {
+              applySeek(trackId, timeSec)
+              pendingSyncRef.current = null
+            } else if (trackId) {
+              pendingSyncRef.current = { type: 'SEEK', trackId, timeSec }
+              onQueueUpdated?.()
+            }
             break
-        case 'NEXT':
+          case 'NEXT':
+            pendingSyncRef.current = null
             applyNext()
             break
-        case 'PREVIOUS':
+          case 'PREVIOUS':
+            pendingSyncRef.current = null
             applyPrevious()
             break
-        case 'QUEUE_UPDATED':
+          case 'QUEUE_UPDATED':
             onQueueUpdated?.()
             break
           default:
@@ -186,6 +203,17 @@ export function usePlaybackSync(
       supabase.removeChannel(channel)
     }
   }, [roomCode, clientId, applyPlay, applyPause, applySeek, applyNext, applyPrevious, onQueueUpdated])
+
+  // When we receive PLAY/SEEK but didn't have the track, we refetched queue; apply pending sync once we have the track
+  useEffect(() => {
+    const pending = pendingSyncRef.current
+    if (!pending) return
+    const tr = tracks.find((t) => t.id === pending.trackId)
+    if (!tr) return
+    if (pending.type === 'PLAY') applyPlay(pending.trackId, pending.timeSec)
+    else applySeek(pending.trackId, pending.timeSec)
+    pendingSyncRef.current = null
+  }, [tracks, applyPlay, applySeek])
 
   useEffect(() => {
     if (!roomCode || !initialRoomState) return

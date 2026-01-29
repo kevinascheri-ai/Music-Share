@@ -14,8 +14,11 @@ CREATE TABLE IF NOT EXISTS public.tracks (
   title TEXT NOT NULL,
   url TEXT NOT NULL,
   order_index INT NOT NULL DEFAULT 0,
+  thumbnail_url TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.tracks ADD COLUMN IF NOT EXISTS thumbnail_url TEXT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tracks_room_code ON public.tracks(room_code);
 CREATE INDEX IF NOT EXISTS idx_tracks_room_order ON public.tracks(room_code, order_index);

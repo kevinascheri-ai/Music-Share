@@ -2,8 +2,14 @@
 
 import { useState } from 'react'
 
+type ResolveResult = {
+  directUrl: string
+  title?: string
+  imageUrl?: string
+}
+
 type Props = {
-  onAdd: (title: string, url: string) => Promise<void>
+  onAdd: (title: string, url: string, thumbnailUrl?: string | null) => Promise<void>
 }
 
 export function AddTrackForm({ onAdd }: Props) {
@@ -12,7 +18,7 @@ export function AddTrackForm({ onAdd }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function resolveToDirectUrl(inputUrl: string): Promise<string> {
+  async function resolveUrl(inputUrl: string): Promise<ResolveResult> {
     const res = await fetch('/api/resolve-audio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,7 +26,11 @@ export function AddTrackForm({ onAdd }: Props) {
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error ?? 'Failed to resolve URL')
-    return data.directUrl
+    return {
+      directUrl: data.directUrl,
+      title: data.title ?? undefined,
+      imageUrl: data.imageUrl ?? undefined,
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -33,8 +43,9 @@ export function AddTrackForm({ onAdd }: Props) {
     }
     setSubmitting(true)
     try {
-      const directUrl = await resolveToDirectUrl(rawUrl)
-      await onAdd(title.trim() || 'Untitled', directUrl)
+      const { directUrl, title: resolvedTitle, imageUrl } = await resolveUrl(rawUrl)
+      const displayTitle = (title.trim() || resolvedTitle || 'Untitled').trim()
+      await onAdd(displayTitle, directUrl, imageUrl ?? null)
       setTitle('')
       setUrl('')
     } catch (err) {
@@ -51,7 +62,7 @@ export function AddTrackForm({ onAdd }: Props) {
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="Track title (optional)"
+        placeholder="Track title (optional — we’ll use Suno’s if you paste a link)"
         className="w-full py-3 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[#1db954] focus:outline-none transition"
       />
       <input
@@ -63,7 +74,7 @@ export function AddTrackForm({ onAdd }: Props) {
         className="w-full py-3 px-4 rounded-lg bg-[#282828] text-white placeholder-[#6b6b6b] border border-transparent focus:border-[#1db954] focus:outline-none transition"
       />
       <p className="text-xs text-[#6b6b6b]">
-        Paste the link from Suno’s “Copy link” button—we’ll resolve it to the playable track. Direct .mp3/.m4a URLs also work.
+        Paste the link from Suno’s “Copy link” button—we’ll resolve it and pull the song name and art. Direct .mp3/.m4a URLs also work.
       </p>
       <button
         type="submit"

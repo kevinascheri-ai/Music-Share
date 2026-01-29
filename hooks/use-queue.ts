@@ -34,7 +34,7 @@ export function useQueue(roomCode: string | null, onQueueUpdated?: () => void) {
   }, [roomCode, fetchTracks])
 
   const addTrack = useCallback(
-    async (title: string, url: string) => {
+    async (title: string, url: string, thumbnailUrl?: string | null) => {
       if (!roomCode) return
       const { data: existing } = await supabase
         .from('tracks')
@@ -49,6 +49,7 @@ export function useQueue(roomCode: string | null, onQueueUpdated?: () => void) {
         title: title.trim() || 'Untitled',
         url: url.trim(),
         order_index: nextIndex,
+        ...(thumbnailUrl != null && thumbnailUrl !== '' && { thumbnail_url: thumbnailUrl }),
       })
       if (err) throw new Error(err.message)
       await fetchTracks()
