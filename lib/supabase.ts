@@ -24,12 +24,3 @@ export type RoomState = {
   current_time_sec: number
   updated_at: string
 }
-
-export type PlaybackEvent = {
-  type: 'PLAY' | 'PAUSE' | 'SEEK' | 'NEXT' | 'PREVIOUS' | 'QUEUE_UPDATED'
-  trackId?: string | null
-  timeSec?: number
-  clientSentAtMs?: number
-  eventId?: string
-  clientId?: string
-}

@@ -66,3 +66,27 @@ input[type="range"]::-moz-range-thumb {
 .range-accent::-moz-range-track {
   background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), var(--bg-hover) var(--progress, 0%));
 }
+
+/* Range thumb hidden on disabled sliders */
+input[type="range"]:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+input[type="range"]:disabled::-moz-range-thumb {
+  opacity: 0;
+}
+
+/* "Now playing" equalizer bars in the queue */
+@keyframes eq-bounce {
+  0%, 100% { height: 25%; }
+  50% { height: 100%; }
+}
+.eq-bar {
+  height: 25%;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eq-bar {
+    animation: none;
+    height: 60%;
+  }
+}

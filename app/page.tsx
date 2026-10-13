@@ -42,7 +42,7 @@ export default function HomePage() {
       <div className="w-full max-w-sm text-center">
         <h1 className="text-4xl font-bold mb-2">Suno Jam</h1>
         <p className="text-[#b3b3b3] mb-10">
-          Create a room and share the link. Everyone listens in sync—no account needed.
+          Drop in a Suno playlist and share the link. Play, pause and skip for everyone at once—no account needed.
         </p>
 
         <div className="space-y-4">
