@@ -1,51 +1,53 @@
 /**
- * Estimates server time offset by pinging /api/time and measuring RTT.
- * serverTime ≈ clientTime + offset (so offset = serverTime - clientTime at round-trip midpoint).
+ * Estimates the offset between this device's clock and the server's, so every
+ * listener computes song positions against the same clock.
+ * serverTime ≈ Date.now() + offset
  */
 
 const TIME_API = '/api/time'
-const DEFAULT_OFFSET = 0
+const SAMPLES = 4
+const RESYNC_MS = 5 * 60_000
 
-let cachedOffset: number = DEFAULT_OFFSET
+let cachedOffset = 0
 let lastSyncAt = 0
-const SYNC_INTERVAL_MS = 30_000
+let inflight: Promise<number> | null = null
 
-export function getTimeSyncOffset(): number {
-  return cachedOffset
-}
-
-/** Get current estimated server time (ms). */
+/** Current estimated server time (ms). */
 export function getServerTimeMs(): number {
   return Date.now() + cachedOffset
 }
 
-/**
- * Ping the time API and update cached offset.
- * Uses single round-trip: offset = serverTime - clientTime (at receive time).
- * For better accuracy you could do multiple samples and use median; single sample is fine for MVP.
- */
-export async function syncTime(): Promise<number> {
+async function sample(): Promise<{ offset: number; rtt: number } | null> {
   const t0 = Date.now()
   try {
     const res = await fetch(TIME_API, { cache: 'no-store' })
-    if (!res.ok) return cachedOffset
-    const data = await res.json()
-    const serverTime = data.now as number
+    if (!res.ok) return null
+    const { now } = (await res.json()) as { now: number }
     const t1 = Date.now()
-    const rtt = t1 - t0
-    const clientTimeAtReceive = t0 + rtt / 2
-    cachedOffset = serverTime - clientTimeAtReceive
-    lastSyncAt = t1
-    return cachedOffset
+    if (typeof now !== 'number') return null
+    return { offset: now - (t0 + (t1 - t0) / 2), rtt: t1 - t0 }
   } catch {
-    return cachedOffset
+    return null
   }
 }
 
-/** Sync if stale (older than SYNC_INTERVAL_MS). */
-export async function ensureTimeSynced(): Promise<number> {
-  if (Date.now() - lastSyncAt > SYNC_INTERVAL_MS) {
-    return syncTime()
+/** Take a few samples and keep the one with the lowest round trip (least error). */
+export async function syncTime(): Promise<number> {
+  let best: { offset: number; rtt: number } | null = null
+  for (let i = 0; i < SAMPLES; i++) {
+    const s = await sample()
+    if (s && (!best || s.rtt < best.rtt)) best = s
+  }
+  if (best) {
+    cachedOffset = best.offset
+    lastSyncAt = Date.now()
   }
   return cachedOffset
+}
+
+/** Sync if we never have, or the last sync is stale. Concurrent callers share one sync. */
+export function ensureTimeSynced(): Promise<number> {
+  if (lastSyncAt && Date.now() - lastSyncAt < RESYNC_MS) return Promise.resolve(cachedOffset)
+  if (!inflight) inflight = syncTime().finally(() => (inflight = null))
+  return inflight
 }
