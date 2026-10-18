@@ -4,7 +4,14 @@
  * Suno has no official public API, so this uses the same JSON endpoints the
  * suno.com web app uses (studio-api.prod.suno.com). Every fetch is restricted to
  * Suno hosts so the resolver can't be used to make requests to arbitrary sites.
+ *
+ * Audio: Suno no longer serves logged-out visitors `audio_url` (it reads
+ * ".../api/forbidden") and its old cdn1.suno.ai/<id>.mp3 files now need signed
+ * URLs. Playable files are listed under `media_urls` instead. Tracks are saved as
+ * our /api/suno/audio/<id> endpoint, which looks up the current file at play time.
  */
+
+import { isSunoClipId, sunoAudioPath } from '@/lib/audio-url'
 
 export type ResolvedTrack = {
   title: string
@@ -31,7 +38,6 @@ export class ResolveError extends Error {
 }
 
 const SUNO_API_BASE = 'https://studio-api.prod.suno.com'
-const SUNO_CDN_AUDIO = 'https://cdn1.suno.ai'
 const FETCH_TIMEOUT_MS = 10_000
 const MAX_PLAYLIST_PAGES = 20
 const MAX_TRACKS = 500
@@ -77,10 +83,17 @@ export function parseSunoLink(url: URL): SunoLink {
   return { type: 'unknown' }
 }
 
+type SunoMediaUrl = {
+  url?: unknown
+  content_type?: unknown
+  delivery?: unknown
+}
+
 type SunoClip = {
   id?: unknown
   title?: unknown
   audio_url?: unknown
+  media_urls?: unknown
   status?: unknown
   display_name?: unknown
   handle?: unknown
@@ -101,13 +114,48 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
-export function cdnAudioUrl(clipId: string): string {
-  return `${SUNO_CDN_AUDIO}/${clipId}.mp3`
+// Most widely supported formats first. Suno currently lists Opus audio in an M4A file.
+const MEDIA_TYPE_PREFERENCE = ['mp3', 'audio/mpeg', 'm4a-aac', 'aac', 'audio/aac', 'm4a', 'audio/mp4', 'm4a-opus', 'opus']
+
+// Bare cdn1.suno.ai/<id>.mp3 files now answer 403 without a signature.
+function isUnsignedSunoCdnMp3(url: string): boolean {
+  return /^https:\/\/cdn\d*\.suno\.ai\/[^?#]+\.mp3$/i.test(url)
+}
+
+/** The best audio file a browser can play directly for this clip, or null. */
+export function playableAudioUrl(clip: SunoClip | null | undefined): string | null {
+  if (!clip || typeof clip !== 'object') return null
+  const media = Array.isArray(clip.media_urls) ? (clip.media_urls as SunoMediaUrl[]) : []
+  const rank = (type: string) => {
+    const i = MEDIA_TYPE_PREFERENCE.indexOf(type)
+    return i < 0 ? MEDIA_TYPE_PREFERENCE.length : i
+  }
+  const candidates = media
+    .filter((m) => m && typeof m === 'object')
+    .map((m) => ({
+      url: str(m.url),
+      type: (str(m.content_type) ?? '').toLowerCase(),
+      delivery: (str(m.delivery) ?? 'progressive').toLowerCase(),
+    }))
+    // Streaming formats (HLS) need extra player code; progressive files play as-is.
+    .filter((m) => m.url?.startsWith('https://') && m.delivery === 'progressive')
+    .sort((a, b) => rank(a.type) - rank(b.type))
+  if (candidates[0]?.url) return candidates[0].url
+
+  const audioUrl = str(clip.audio_url)
+  if (
+    audioUrl?.startsWith('https://') &&
+    !/\/api\/forbidden|audiopipe\./i.test(audioUrl) &&
+    !isUnsignedSunoCdnMp3(audioUrl)
+  ) {
+    return audioUrl
+  }
+  return null
 }
 
 /**
  * Convert a Suno clip object into a playable track, or null if it can't be
- * played yet (still generating, errored, or missing an id).
+ * played (still generating, errored, or Suno lists no playable audio).
  */
 export function clipToTrack(clip: SunoClip | null | undefined): ResolvedTrack | null {
   if (!clip || typeof clip !== 'object') return null
@@ -115,18 +163,13 @@ export function clipToTrack(clip: SunoClip | null | undefined): ResolvedTrack | 
   const status = str(clip.status)
   if (status && status !== 'complete') return null
 
-  // Prefer the permanent CDN mp3. audio_url can be a temporary streaming
-  // endpoint (audiopipe) for very recent clips.
-  const audioUrl = str(clip.audio_url)
-  let url: string | null = null
-  if (audioUrl && /^https:\/\/cdn\d*\.suno\.ai\//i.test(audioUrl)) url = audioUrl
-  else if (id && UUID_RE.test(id)) url = cdnAudioUrl(id.toLowerCase())
-  else if (audioUrl?.startsWith('https://')) url = audioUrl
-  if (!url) return null
+  const audio = playableAudioUrl(clip)
+  if (!audio) return null
 
   return {
     title: str(clip.title) ?? 'Untitled',
-    url,
+    // Save our own endpoint rather than Suno's file URL, which Suno can change.
+    url: id && isSunoClipId(id) ? sunoAudioPath(id) : audio,
     artist: str(clip.display_name) ?? str(clip.handle),
   }
 }
@@ -219,11 +262,38 @@ function cleanPageTitle(title: string | null): string | null {
   return title.replace(/\s*[|\-–]\s*Suno\s*$/i, '').trim() || null
 }
 
+/**
+ * Find the audio file for one song in a Suno page. The page embeds the clip
+ * JSON (with escaped slashes), so look for a file named after the song id.
+ */
+export function audioUrlFromHtml(html: string, clipId: string): string | null {
+  const re = new RegExp(`https:(?:\\\\?/){2}[^"'\\s]+?(?:\\\\?/)${clipId}\\.(mp3|m4a|aac|ogg|opus|webm)(?=["'\\\\?\\s])`, 'gi')
+  const found = Array.from(html.matchAll(re), (m) => ({ url: m[0].replace(/\\\//g, '/'), ext: m[1].toLowerCase() }))
+    .filter((f) => !isUnsignedSunoCdnMp3(f.url))
+  found.sort((a, b) => (a.ext === 'mp3' ? 0 : 1) - (b.ext === 'mp3' ? 0 : 1))
+  return found[0]?.url ?? null
+}
+
+/**
+ * The URL to play a Suno song right now: from the clip API, or from the public
+ * song page if the API doesn't list one. Used by /api/suno/audio/<id>.
+ */
+export async function resolveAudioUrl(clipId: string): Promise<string | null> {
+  if (!isSunoClipId(clipId)) return null
+  const id = clipId.toLowerCase()
+  const clip = await fetchSunoJson(`/api/clip/${id}/`).catch(() => null)
+  const fromApi = playableAudioUrl(clip as SunoClip | null)
+  if (fromApi) return fromApi
+  const html = await fetchSunoHtml(`https://suno.com/song/${id}`).catch(() => null)
+  return html ? audioUrlFromHtml(html, id) : null
+}
+
 /** Extract unique song ids from a Suno page, in document order. */
 export function extractSongIdsFromHtml(html: string): string[] {
   const ids: string[] = []
   const seen = new Set<string>()
   const patterns = [
+    new RegExp(`/clip\\\\?/(${UUID_RE.source})\\.(?:m4a|mp3)`, 'gi'),
     new RegExp(`cdn\\d*\\.suno\\.ai\\\\?/(${UUID_RE.source})\\.mp3`, 'gi'),
     new RegExp(`/song/(${UUID_RE.source})`, 'gi'),
   ]
@@ -250,10 +320,16 @@ async function resolveSong(id: string): Promise<ResolveResult> {
     throw new ResolveError('That song is still generating on Suno. Try again once it finishes.')
   }
 
-  // API unavailable: fall back to the public page for the title and the CDN for audio.
+  // No playable file in the API response: fall back to the public song page.
   const html = await fetchSunoHtml(`https://suno.com/song/${id}`).catch(() => null)
-  const title = cleanPageTitle(html ? metaContent(html, 'og:title') : null)
-  return { kind: 'song', tracks: [{ title: title ?? 'Suno song', url: cdnAudioUrl(id) }] }
+  if (!html || !audioUrlFromHtml(html, id)) {
+    throw new ResolveError(
+      'Suno isn’t sharing the audio for that song. Make sure it’s public, then try again.',
+      clip ? 404 : 502
+    )
+  }
+  const title = str((clip as SunoClip | null)?.title) ?? cleanPageTitle(metaContent(html, 'og:title'))
+  return { kind: 'song', tracks: [{ title: title ?? 'Suno song', url: sunoAudioPath(id) }] }
 }
 
 async function resolvePlaylist(id: string): Promise<ResolveResult> {
@@ -310,7 +386,10 @@ async function resolvePlaylist(id: string): Promise<ResolveResult> {
       else skipped++
     }
     if (!tracks.length) {
-      throw new ResolveError('None of the songs in that playlist are ready to play yet.', 404)
+      throw new ResolveError(
+        'None of the songs in that playlist can be played yet. Make sure they’re public and finished generating.',
+        404
+      )
     }
     return { kind: 'playlist', name, tracks, skipped }
   }
@@ -329,7 +408,7 @@ async function resolvePlaylist(id: string): Promise<ResolveResult> {
     name: cleanPageTitle(metaContent(html as string, 'og:title')),
     tracks: ids.slice(0, MAX_TRACKS).map((songId, i) => ({
       title: `Track ${i + 1}`,
-      url: cdnAudioUrl(songId),
+      url: sunoAudioPath(songId),
     })),
   }
 }
