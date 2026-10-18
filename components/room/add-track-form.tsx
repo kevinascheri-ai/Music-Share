@@ -48,7 +48,9 @@ export function AddTrackForm({ onAdd }: Props) {
           : `“${data.tracks[0].title}”`
       await onAdd(data.tracks, summary)
       setUrl('')
-      const skipped = data.skipped ? ` (${data.skipped} still generating on Suno, skipped)` : ''
+      const skipped = data.skipped
+        ? ` (${data.skipped} skipped: Suno isn’t sharing playable audio for ${data.skipped === 1 ? 'it' : 'them'} yet)`
+        : ''
       setNotice(`Added ${summary}${skipped}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add')
