@@ -6,9 +6,11 @@
  * Suno hosts so the resolver can't be used to make requests to arbitrary sites.
  *
  * Audio: Suno no longer serves logged-out visitors `audio_url` (it reads
- * ".../api/forbidden") and its old cdn1.suno.ai/<id>.mp3 files now need signed
- * URLs. Playable files are listed under `media_urls` instead. Tracks are saved as
- * our /api/suno/audio/<id> endpoint, which looks up the current file at play time.
+ * ".../api/forbidden"), its old cdn1.suno.ai/<id>.mp3 files need signed URLs, and
+ * the files in `media_urls` that carry an `encoding` are scrambled for Suno's own
+ * player. The song's share video (`video_url`, an MP4 with an AAC audio track) is
+ * public and plays in any browser's audio element, so that's what we use. Tracks are
+ * saved as our /api/suno/audio/<id> endpoint, which looks up the file at play time.
  */
 
 import { isSunoClipId, sunoAudioPath } from '@/lib/audio-url'
@@ -87,6 +89,7 @@ type SunoMediaUrl = {
   url?: unknown
   content_type?: unknown
   delivery?: unknown
+  encoding?: unknown
 }
 
 type SunoClip = {
@@ -94,6 +97,7 @@ type SunoClip = {
   title?: unknown
   audio_url?: unknown
   media_urls?: unknown
+  video_url?: unknown
   status?: unknown
   display_name?: unknown
   handle?: unknown
@@ -114,7 +118,7 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
-// Most widely supported formats first. Suno currently lists Opus audio in an M4A file.
+// Most widely supported formats first.
 const MEDIA_TYPE_PREFERENCE = ['mp3', 'audio/mpeg', 'm4a-aac', 'aac', 'audio/aac', 'm4a', 'audio/mp4', 'm4a-opus', 'opus']
 
 // Bare cdn1.suno.ai/<id>.mp3 files now answer 403 without a signature.
@@ -122,7 +126,10 @@ function isUnsignedSunoCdnMp3(url: string): boolean {
   return /^https:\/\/cdn\d*\.suno\.ai\/[^?#]+\.mp3$/i.test(url)
 }
 
-/** The best audio file a browser can play directly for this clip, or null. */
+/**
+ * The best file a browser can play directly for this clip, or null. Order:
+ * a plain audio file from media_urls, a usable audio_url, then the share video.
+ */
 export function playableAudioUrl(clip: SunoClip | null | undefined): string | null {
   if (!clip || typeof clip !== 'object') return null
   const media = Array.isArray(clip.media_urls) ? (clip.media_urls as SunoMediaUrl[]) : []
@@ -136,9 +143,11 @@ export function playableAudioUrl(clip: SunoClip | null | undefined): string | nu
       url: str(m.url),
       type: (str(m.content_type) ?? '').toLowerCase(),
       delivery: (str(m.delivery) ?? 'progressive').toLowerCase(),
+      encoded: !!str(m.encoding),
     }))
-    // Streaming formats (HLS) need extra player code; progressive files play as-is.
-    .filter((m) => m.url?.startsWith('https://') && m.delivery === 'progressive')
+    // Streaming formats (HLS) need extra player code, and "encoded" files are
+    // scrambled for Suno's own player; only plain progressive files play as-is.
+    .filter((m) => m.url?.startsWith('https://') && m.delivery === 'progressive' && !m.encoded)
     .sort((a, b) => rank(a.type) - rank(b.type))
   if (candidates[0]?.url) return candidates[0].url
 
@@ -150,6 +159,10 @@ export function playableAudioUrl(clip: SunoClip | null | undefined): string | nu
   ) {
     return audioUrl
   }
+
+  // The share video is an ordinary MP4 (H.264 + AAC); audio elements play its sound.
+  const videoUrl = str(clip.video_url)
+  if (videoUrl?.startsWith('https://') && /\.mp4(?:[?#]|$)/i.test(videoUrl)) return videoUrl
   return null
 }
 
@@ -263,29 +276,60 @@ function cleanPageTitle(title: string | null): string | null {
 }
 
 /**
- * Find the audio file for one song in a Suno page. The page embeds the clip
- * JSON (with escaped slashes), so look for a file named after the song id.
+ * Find a playable file for one song in a Suno page (the page embeds the clip
+ * JSON with escaped slashes). Looks for the song's share video, or a signed mp3.
+ * M4A files are skipped: Suno scrambles those for its own player.
  */
 export function audioUrlFromHtml(html: string, clipId: string): string | null {
-  const re = new RegExp(`https:(?:\\\\?/){2}[^"'\\s]+?(?:\\\\?/)${clipId}\\.(mp3|m4a|aac|ogg|opus|webm)(?=["'\\\\?\\s])`, 'gi')
+  const re = new RegExp(`https:(?:\\\\?/){2}[^"'\\s]+?(?:\\\\?/)${clipId}\\.(mp3|mp4)(?=["'\\\\?\\s])`, 'gi')
   const found = Array.from(html.matchAll(re), (m) => ({ url: m[0].replace(/\\\//g, '/'), ext: m[1].toLowerCase() }))
     .filter((f) => !isUnsignedSunoCdnMp3(f.url))
-  found.sort((a, b) => (a.ext === 'mp3' ? 0 : 1) - (b.ext === 'mp3' ? 0 : 1))
+  found.sort((a, b) => (a.ext === 'mp4' ? 0 : 1) - (b.ext === 'mp4' ? 0 : 1))
   return found[0]?.url ?? null
 }
 
+export type AudioLookup =
+  | { url: string }
+  // unavailable: Suno answered but shares no playable file for this song.
+  // unreachable: we couldn't get an answer from Suno at all.
+  | { url: null; reason: 'unavailable' | 'unreachable' }
+
 /**
- * The URL to play a Suno song right now: from the clip API, or from the public
- * song page if the API doesn't list one. Used by /api/suno/audio/<id>.
+ * Where to play a Suno song right now: from the clip API, or from the public
+ * song page if the API doesn't list a playable file. Used by /api/suno/audio/<id>.
  */
-export async function resolveAudioUrl(clipId: string): Promise<string | null> {
-  if (!isSunoClipId(clipId)) return null
+export async function lookupAudio(clipId: string): Promise<AudioLookup> {
+  if (!isSunoClipId(clipId)) return { url: null, reason: 'unavailable' }
   const id = clipId.toLowerCase()
-  const clip = await fetchSunoJson(`/api/clip/${id}/`).catch(() => null)
-  const fromApi = playableAudioUrl(clip as SunoClip | null)
-  if (fromApi) return fromApi
-  const html = await fetchSunoHtml(`https://suno.com/song/${id}`).catch(() => null)
-  return html ? audioUrlFromHtml(html, id) : null
+  let answered = false
+
+  try {
+    const res = await sunoFetch(`${SUNO_API_BASE}/api/clip/${id}/`, 'application/json')
+    if (res.ok || res.status === 404) answered = true
+    if (res.ok) {
+      const url = playableAudioUrl((await res.json().catch(() => null)) as SunoClip | null)
+      if (url) return { url }
+    }
+  } catch {
+    // fall through to the public page
+  }
+
+  try {
+    const res = await sunoFetch(`https://suno.com/song/${id}`, 'text/html,application/xhtml+xml')
+    if (res.ok || res.status === 404) answered = true
+    if (res.ok) {
+      const url = audioUrlFromHtml((await res.text()).slice(0, MAX_HTML_BYTES), id)
+      if (url) return { url }
+    }
+  } catch {
+    // no answer from the page either
+  }
+
+  return { url: null, reason: answered ? 'unavailable' : 'unreachable' }
+}
+
+export async function resolveAudioUrl(clipId: string): Promise<string | null> {
+  return (await lookupAudio(clipId)).url
 }
 
 /** Extract unique song ids from a Suno page, in document order. */

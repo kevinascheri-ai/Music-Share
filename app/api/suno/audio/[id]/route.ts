@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { resolveAudioUrl } from '@/lib/suno'
+import { lookupAudio } from '@/lib/suno'
 import { isSunoClipId } from '@/lib/audio-url'
 
 export const dynamic = 'force-dynamic'
@@ -17,21 +17,23 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Not a Suno song id' }, { status: 400 })
   }
 
-  let url: string | null = null
-  try {
-    url = await resolveAudioUrl(id)
-  } catch (err) {
-    console.error('suno audio lookup failed:', id, err)
-  }
-  if (!url) {
+  const found = await lookupAudio(id)
+  if (found.url === null) {
+    // 404 tells the player to skip this song; 502 means "try again later".
+    const unreachable = found.reason === 'unreachable'
+    if (unreachable) console.error('suno audio lookup: Suno unreachable for', id)
     return NextResponse.json(
-      { error: 'Suno isn’t sharing audio for this song. It may be private or deleted.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      {
+        error: unreachable
+          ? 'Couldn’t reach Suno right now. Try again in a moment.'
+          : 'Suno isn’t sharing playable audio for this song.',
+      },
+      { status: unreachable ? 502 : 404, headers: { 'Cache-Control': 'no-store' } }
     )
   }
 
-  return NextResponse.redirect(url, {
+  return NextResponse.redirect(found.url, {
     status: 302,
-    headers: { 'Cache-Control': 'public, max-age=300, s-maxage=600, stale-while-revalidate=3600' },
+    headers: { 'Cache-Control': 'public, max-age=60, s-maxage=600, stale-while-revalidate=3600' },
   })
 }

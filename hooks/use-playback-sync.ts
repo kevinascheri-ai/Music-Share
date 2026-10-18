@@ -32,6 +32,8 @@ const ORPHAN_AFTER_MS = 10 * 60_000
 /** Pressing previous after this many seconds restarts the song instead. */
 const RESTART_THRESHOLD_SEC = 3
 const MAX_LOAD_RETRIES = 2
+/** Stop auto-skipping unplayable songs after this many in a row (something bigger is wrong). */
+const MAX_AUTO_SKIPS = 3
 
 // 10ms of silence, used to unlock audio on browsers (iOS) that require a play() inside a tap.
 const SILENT_WAV =
@@ -91,6 +93,7 @@ export function usePlaybackSync({
   ctx.current = { roomCode, clientId, name, onQueueChanged, onActivity }
   const loadedTrackIdRef = useRef<string | null>(null)
   const loadRetriesRef = useRef<{ trackId: string | null; count: number }>({ trackId: null, count: 0 })
+  const autoSkipsRef = useRef(0)
   const lastHardSeekRef = useRef(0)
   const missingTrackRefetchRef = useRef<string | null>(null)
   const needsUnlockRef = useRef(false)
@@ -446,6 +449,7 @@ export function usePlaybackSync({
     const onPlaying = () => {
       setNeedsUnlock(false)
       loadRetriesRef.current = { trackId: null, count: 0 }
+      autoSkipsRef.current = 0
     }
     const onEnded = () => {
       if (loadedTrackIdRef.current) advanceRef.current(loadedTrackIdRef.current)
@@ -466,6 +470,25 @@ export function usePlaybackSync({
         return
       }
       setAudioError('This song couldn’t be loaded. It may be private on Suno or the link may have expired. Skip to keep going.')
+
+      // Our Suno endpoint answers 404 when Suno shares no playable audio for the
+      // song. That's the same for everyone, so move the room along instead of stalling.
+      const src = audio.getAttribute('src') ?? ''
+      if (trackId && src.startsWith('/api/suno/audio/') && autoSkipsRef.current < MAX_AUTO_SKIPS) {
+        fetch(src, { redirect: 'manual', cache: 'no-store' })
+          .then((res) => {
+            if (res.status !== 404 || loadedTrackIdRef.current !== trackId) return
+            autoSkipsRef.current++
+            const title = tracksRef.current.find((t) => t.id === trackId)?.title
+            ctx.current.onActivity({
+              by: 'Suno Jam',
+              action: 'queue',
+              note: `skipped “${title ?? 'a song'}”: Suno doesn’t share playable audio for it`,
+            })
+            advanceRef.current(trackId)
+          })
+          .catch(() => {})
+      }
     }
     audio.addEventListener('loadedmetadata', onDuration)
     audio.addEventListener('durationchange', onDuration)
