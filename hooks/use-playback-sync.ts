@@ -16,6 +16,7 @@ import {
   type SyncState,
 } from '@/lib/sync'
 import { useRoomChannel, type Listener } from '@/hooks/use-room-channel'
+import { playableUrl } from '@/lib/audio-url'
 
 const TICK_MS = 500
 /** Within this, play at normal speed. */
@@ -154,7 +155,7 @@ export function usePlaybackSync({
 
     // (Re)load on a song change, or retry a song that failed to load.
     if (loadedTrackIdRef.current !== track.id || (audio.error && s.isPlaying)) {
-      audio.src = track.url
+      audio.src = playableUrl(track.url)
       audio.playbackRate = 1
       loadedTrackIdRef.current = track.id
       setDurationSec(0)
