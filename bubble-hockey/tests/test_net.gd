@@ -8,8 +8,8 @@ func test_parse_input_accepts_well_formed_input() -> void:
 
 func test_parse_input_rejects_malformed_input() -> void:
 	check_eq(NetCodec.parse_input("nope", 3), null, "not an array")
-	check_eq(NetCodec.parse_input([[0, false, 0]], 3), null, "wrong rod count")
-	check_eq(NetCodec.parse_input([[0, false], [0, false, 0], [0, false, 0]], 3), null, "short rod entry")
+	check_eq(NetCodec.parse_input([[0, false, 0]], 3), null, "wrong figure count")
+	check_eq(NetCodec.parse_input([[0, false], [0, false, 0], [0, false, 0]], 3), null, "short figure entry")
 	check_eq(NetCodec.parse_input([["x", false, 0], [0, false, 0], [0, false, 0]], 3), null, "string where a number belongs")
 	check_eq(NetCodec.parse_input([[NAN, false, 0], [0, false, 0], [0, false, 0]], 3), null, "NaN is rejected")
 
@@ -33,7 +33,7 @@ func test_real_snapshot_is_valid_and_round_trips() -> void:
 	m.sim.puck_pos = Vector2(120.123, 456.789)
 	m.score = [2, 1]
 	var d := _snapshot(m)
-	check(NetCodec.valid_snapshot(d, m.sim.rods.size()), "a real snapshot passes validation")
+	check(NetCodec.valid_snapshot(d, m.sim.figures.size()), "a real snapshot passes validation")
 	var guest := Match.new()
 	guest.sim.from_state(d.s)
 	guest.from_state(d.m)
@@ -43,13 +43,13 @@ func test_real_snapshot_is_valid_and_round_trips() -> void:
 
 func test_malformed_snapshots_are_rejected() -> void:
 	var m := Match.new()
-	var rods := m.sim.rods.size()
+	var count := m.sim.figures.size()
 	var good := _snapshot(m)
 	var cases := {
 		"missing state": func(d): d.erase("s"),
 		"short puck": func(d): d.s[0] = [1, 2],
-		"wrong rod count": func(d): d.s[2].pop_back(),
-		"string in rod": func(d): d.s[2][0][1] = "x",
+		"wrong figure count": func(d): d.s[2].pop_back(),
+		"string in figure": func(d): d.s[2][0][1] = "x",
 		"phase out of range": func(d): d.m[3] = 99,
 		"event without type": func(d): d.e = [{"team": 1}],
 		"non-bool flag": func(d): d.m[5] = 1,
@@ -57,7 +57,7 @@ func test_malformed_snapshots_are_rejected() -> void:
 	for name in cases:
 		var d: Dictionary = good.duplicate(true)
 		cases[name].call(d)
-		check(not NetCodec.valid_snapshot(d, rods), "rejects snapshot with %s" % name)
+		check(not NetCodec.valid_snapshot(d, count), "rejects snapshot with %s" % name)
 
 
 func test_slim_event_keeps_only_presentation_fields() -> void:

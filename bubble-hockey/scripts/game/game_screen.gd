@@ -25,7 +25,7 @@ var rules: Dictionary = Match.RULES_TIMER
 var local_team := 0
 
 var match_: Match
-var view: TableView
+var view: TableView3D
 var touch: Array = [null, null]
 var ai: AIController
 
@@ -71,9 +71,11 @@ func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_IGNORE
 	match_ = Match.new(rules)
 
-	view = TableView.new()
+	view = TableView3D.new()
 	view.sim = match_.sim
 	view.flipped = mode == Mode.ONLINE_GUEST
+	# Two players share the screen from opposite ends, so look straight down.
+	view.overhead = mode == Mode.LOCAL
 	add_child(view)
 
 	for team in 2:
@@ -145,7 +147,7 @@ func _layout() -> void:
 	_hud.position = Vector2(0, insets.x)
 	_hud.size = Vector2(size.x, HUD_HEIGHT)
 	var top := insets.x + HUD_HEIGHT
-	view.fit(Rect2(8, top, size.x - 16, size.y - top - insets.y - 8))
+	view.fit(Rect2(0, top, size.x, size.y - top - insets.y))
 
 
 func _build_hud() -> void:
@@ -367,8 +369,8 @@ func _step_guest() -> void:
 	var all := [null, null]
 	all[local_team] = inputs
 	_predicted.apply_inputs(all)
-	for rod in _predicted.team_rods(local_team):
-		rod.step(DT, _predicted.cfg)
+	for f in _predicted.team_figures(local_team):
+		f.step(DT, _predicted.cfg)
 	if _tick % INPUT_EVERY == 0:
 		Net.send({"k": "in", "r": NetCodec.round_floats(inputs)})
 
@@ -379,20 +381,33 @@ func _process(_delta: float) -> void:
 	var holding := []
 	for team in 2:
 		if touch[team]:
-			for i in touch[team].active_rods():
-				holding.append(team * match_.sim.rods_per_team + i)
+			for i in touch[team].active_figures():
+				holding.append(team * match_.sim.figures_per_team + i)
 	view.highlighted = holding
 	if match_.phase == Match.Phase.COUNTDOWN:
 		view.drop_progress = clampf(1.0 - match_.phase_time / Match.COUNTDOWN_TIME, 0.0, 1.0)
 	else:
 		view.drop_progress = 1.0
 	_update_hud()
+	view.set_scoreboard(match_.score, _clock_label.text if not match_.sudden_death else "OT", _scoreboard_caption())
+
+
+func _scoreboard_caption() -> String:
+	match match_.phase:
+		Match.Phase.GOAL:
+			return "GOAL!"
+		Match.Phase.ENDED:
+			return "FINAL"
+		Match.Phase.COUNTDOWN:
+			return "FACE-OFF"
+	return "SUDDEN DEATH" if match_.sudden_death else ""
 
 
 # --- Presentation -----------------------------------------------------------
 
 func _present_events(events: Array) -> void:
 	for e in events:
+		view.effect(e)
 		var strength := float(e.get("strength", 0.0))
 		match e.type:
 			"hit":
@@ -515,7 +530,7 @@ func _on_net_message(d: Dictionary) -> void:
 	match d.get("k", ""):
 		"in":
 			if mode == Mode.ONLINE_HOST:
-				var parsed = NetCodec.parse_input(d.get("r"), match_.sim.rods_per_team)
+				var parsed = NetCodec.parse_input(d.get("r"), match_.sim.figures_per_team)
 				if parsed != null:
 					_remote_input = parsed
 		"st":
@@ -545,7 +560,7 @@ func _on_net_message(d: Dictionary) -> void:
 
 
 func _receive_snapshot(d: Dictionary) -> void:
-	if not NetCodec.valid_snapshot(d, match_.sim.rods.size()):
+	if not NetCodec.valid_snapshot(d, match_.sim.figures.size()):
 		return
 	var n := int(d.get("n", 0))
 	var now := Time.get_ticks_msec() / 1000.0
@@ -587,14 +602,14 @@ func _render_guest() -> void:
 			sim.puck_pos = sim.puck_pos.lerp(next.puck_pos, t)
 		else:
 			sim.from_state(b.s)
-		for i in sim.rods.size():
-			sim.rods[i].x = lerpf(sim.rods[i].x, next.rods[i].x, t)
-			sim.rods[i].angle = lerpf(sim.rods[i].angle, next.rods[i].angle, t)
-	# Our own rods come from local prediction so they react instantly.
-	var own := sim.team_rods(local_team)
-	var mine := _predicted.team_rods(local_team)
+		for i in sim.figures.size():
+			sim.figures[i].s = lerpf(sim.figures[i].s, next.figures[i].s, t)
+			sim.figures[i].angle = lerpf(sim.figures[i].angle, next.figures[i].angle, t)
+	# Our own figures come from local prediction so they react instantly.
+	var own := sim.team_figures(local_team)
+	var mine := _predicted.team_figures(local_team)
 	for i in own.size():
-		own[i].x = mine[i].x
+		own[i].s = mine[i].s
 		own[i].angle = mine[i].angle
 
 

@@ -9,9 +9,9 @@ func _idle(m: Match) -> Callable:
 ## defending goalie moved aside.
 func _force_goal(m: Match, team: int) -> void:
 	var defender := 1 - team
-	var g: Rod = m.sim.team_rods(defender)[0]
-	g.x = g.x_range
-	g.target_x = g.x_range
+	var g: Figure = m.sim.team_figures(defender)[0]
+	g.s = 0.0
+	g.target_s = 0.0
 	m.sim.puck_active = true
 	if team == 0:
 		m.sim.puck_pos = Vector2(m.sim.center_x, 30)
@@ -85,8 +85,8 @@ func test_goals_mode_has_no_clock() -> void:
 func test_stall_restarts_with_faceoff() -> void:
 	var m := Match.new()
 	run_until(m, 200, _idle(m), func(): return m.phase == Match.Phase.PLAYING)
-	var defense: Rod = m.sim.team_rods(0)[1]
-	m.sim.puck_pos = Vector2(m.sim.center_x, defense.y)
+	# On a wing's slot line, far from every figure: nothing can reach it.
+	m.sim.puck_pos = Vector2(85, 300)
 	m.sim.puck_vel = Vector2.ZERO
 	var saw_faceoff := [false]
 	run_until(m, 400, _idle(m), func():

@@ -3,7 +3,7 @@ extends Control
 ## computer-vs-computer game plays behind the menus as an attract screen.
 
 var _menu: Control
-var _attract: TableView
+var _attract: TableView3D
 var _scrim: ColorRect
 var _attract_match: Match
 var _attract_ai: Array[AIController] = []
@@ -16,19 +16,13 @@ func _ready() -> void:
 	theme = UIKit.make_theme()
 	set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = UIKit.BG
-	bg.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
-	add_child(bg)
 
 	var diffs := AIController.load_difficulties()
 	_attract_match = Match.new(Match.RULES_GOALS)
 	_attract_ai = [AIController.new(0, diffs.medium, 1), AIController.new(1, diffs.medium, 2)]
-	_attract = TableView.new()
-	_attract.sim = _attract_match.sim
-	add_child(_attract)
+	_make_attract()
 	_scrim = ColorRect.new()
-	_scrim.color = Color(UIKit.BG, 0.72)
+	_scrim.color = Color(UIKit.BG, 0.2)
 	_scrim.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	_scrim.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(_scrim)
@@ -51,7 +45,18 @@ func _ready() -> void:
 
 
 func _layout() -> void:
-	_attract.fit(Rect2(Vector2.ZERO, size))
+	if _attract:
+		_attract.fit(Rect2(Vector2.ZERO, size))
+
+
+## The menu background: the computer playing itself under a slowly
+## circling camera. Only one 3D view exists at a time, so it is rebuilt
+## after each match.
+func _make_attract() -> void:
+	_attract = TableView3D.new()
+	_attract.sim = _attract_match.sim
+	_attract.attract = true
+	add_child(_attract)
 
 
 func _physics_process(_delta: float) -> void:
@@ -75,7 +80,29 @@ func _screen(title: String, subtitle := "") -> VBoxContainer:
 
 
 func show_main() -> void:
-	var box := _screen("BUBBLE HOCKEY", "Classic table hockey, back under the dome.")
+	UIKit.clear(_menu)
+	# Title up top, buttons at the bottom, the live table in between.
+	var col := UIKit.column(10)
+	col.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	col.offset_top = 70
+	col.offset_bottom = -40
+	col.offset_left = 24
+	col.offset_right = -24
+	_menu.add_child(col)
+	var title := UIKit.label("BUBBLE HOCKEY", 78, UIKit.ACCENT)
+	title.add_theme_constant_override("outline_size", 18)
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
+	col.add_child(title)
+	col.add_child(UIKit.label("Classic table hockey, back under the dome.", 28, UIKit.TEXT))
+	var spacer := Control.new()
+	spacer.size_flags_vertical = SIZE_EXPAND_FILL
+	col.add_child(spacer)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(600, 0)
+	panel.size_flags_horizontal = SIZE_SHRINK_CENTER
+	col.add_child(panel)
+	var box := UIKit.column()
+	panel.add_child(box)
 	box.add_child(UIKit.button("Play vs Computer", show_difficulty))
 	box.add_child(UIKit.button("Play a Friend Online", func(): _with_tutorial(show_online)))
 	box.add_child(UIKit.button("Pass & Play", show_pass_and_play))
@@ -254,10 +281,10 @@ func show_stats() -> void:
 func show_how_to_play(done: Callable) -> void:
 	var box := _screen("HOW TO PLAY")
 	var tips := [
-		"Your three rods are the rows nearest you: goalie, defense, and forwards.",
-		"Touch a row and drag left or right to slide it.",
-		"Drag toward the other goal to swing your sticks. Pull back first, then flick forward for a hard shot.",
-		"Use two thumbs to work two rods at once. Held rods glow.",
+		"You run a goalie and five skaters. Each skater rides a slot up and down the ice, like the rods on a real table.",
+		"Touch near a player to grab it. Drag along its slot to skate it forward or back.",
+		"Drag sideways to spin it. Flick sideways for a full 360 slapshot.",
+		"Use two thumbs to work two players at once. Held players glow.",
 		"Most goals after 3 minutes wins. A tie goes to sudden death.",
 	]
 	for t in tips:
@@ -280,7 +307,8 @@ func _with_tutorial(next: Callable) -> void:
 
 func _start_game(mode: GameScreen.Mode, options: Dictionary) -> void:
 	_menu.visible = false
-	_attract.visible = false
+	_attract.queue_free()
+	_attract = null
 	_scrim.visible = false
 	_game = GameScreen.new()
 	_game.setup(mode, options)
@@ -293,7 +321,7 @@ func _end_game() -> void:
 		_game.queue_free()
 		_game = null
 	_menu.visible = true
-	_attract.visible = true
+	_make_attract()
 	_scrim.visible = true
 	show_main()
 

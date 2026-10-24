@@ -7,52 +7,115 @@ func _step(sim: TableSim, ticks: int) -> void:
 		sim.step(DT)
 
 
-func _goalie(sim: TableSim, team: int) -> Rod:
-	return sim.team_rods(team)[0]
+func _fig(sim: TableSim, team: int, role: String) -> Figure:
+	for f in sim.team_figures(team):
+		if f.role == role:
+			return f
+	return null
 
 
-func test_layout_mirrors_between_teams() -> void:
+## Moves a figure to a slot position and keeps it there.
+func _park(f: Figure, s: float) -> void:
+	f.s = s
+	f.target_s = s
+
+
+func test_layout_has_five_skaters_and_a_goalie_per_side() -> void:
 	var sim := TableSim.new()
-	check_eq(sim.rods.size(), 6, "six rods in the default layout")
-	for i in sim.rods_per_team:
-		var a := sim.rods[i]
-		var b := sim.rods[i + sim.rods_per_team]
-		check(is_equal_approx(a.y, sim.height - b.y), "rod %d mirrors across the center line" % i)
-		check_eq(a.figure_offsets.size(), b.figure_offsets.size(), "same figure count on rod %d" % i)
+	check_eq(sim.figures.size(), 12, "twelve figures in the default layout")
+	for team in 2:
+		var goalies := 0
+		for f in sim.team_figures(team):
+			goalies += 1 if f.is_goalie else 0
+		check_eq(goalies, 1, "team %d has exactly one goalie" % team)
 
 
-func test_rods_stay_inside_the_boards() -> void:
+func test_top_team_mirrors_bottom_team() -> void:
 	var sim := TableSim.new()
-	var margin: float = sim.cfg.figure_radius
-	for rod in sim.rods:
-		for x in [-rod.x_range, rod.x_range]:
-			rod.x = x
-			for i in rod.figure_offsets.size():
-				var fx := rod.figure_pos(i, sim.center_x).x
-				check(fx >= margin and fx <= sim.width - margin, "%s figure %d inside at x=%.0f" % [rod.role, i, fx])
+	var corner := Vector2(sim.width, sim.height)
+	for i in sim.figures_per_team:
+		var a := sim.figures[i]
+		var b := sim.figures[i + sim.figures_per_team]
+		check(a.slot_a.is_equal_approx(corner - b.slot_a), "%s slot is rotated 180 degrees" % a.role)
+		check(a.forward_sign == -b.forward_sign, "%s faces the other way" % a.role)
 
 
-func test_rod_slide_is_speed_limited_and_clamped() -> void:
+func test_skater_slots_run_the_length_of_the_ice() -> void:
 	var sim := TableSim.new()
-	var rod := sim.rods[2]
-	rod.set_input(10000.0, false, 0.0)
-	check_eq(rod.target_x, rod.x_range, "target clamps to slide range")
-	rod.step(DT, sim.cfg)
-	check(absf(rod.x - sim.cfg.rod_max_slide_speed * DT) < 0.01, "slide limited to max speed in one tick")
+	for f in sim.figures:
+		if f.is_goalie:
+			check(absf(f.slot_dir.y) < 0.01, "goalie slides side to side")
+		else:
+			check(absf(f.slot_dir.x) < 0.01, "%s slot runs lengthwise" % f.role)
 
 
-func test_rod_spin_springs_back_to_rest() -> void:
+func test_figures_on_different_slots_never_overlap() -> void:
 	var sim := TableSim.new()
-	var rod := sim.rods[0]
-	rod.angle = 1.0
-	for i in 120:
-		rod.step(DT, sim.cfg)
-	check(absf(rod.angle) < 0.05, "rod returns near rest without input (angle %.3f)" % rod.angle)
+	var min_gap: float = 2.0 * sim.cfg.figure_radius
+	for i in sim.figures.size():
+		for j in range(i + 1, sim.figures.size()):
+			var a := sim.figures[i]
+			var b := sim.figures[j]
+			var gap := _segment_distance(a.slot_a, a.slot_b, b.slot_a, b.slot_b)
+			check(gap >= min_gap, "%d:%s and %d:%s slots are %.0f apart" % [a.team, a.role, b.team, b.role, gap])
+
+
+func _segment_distance(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> float:
+	var best := INF
+	for p in [a, b]:
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, c, d)))
+	for p in [c, d]:
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, b)))
+	return best
+
+
+func test_slots_stay_inside_the_boards() -> void:
+	var sim := TableSim.new()
+	var r: float = sim.cfg.figure_radius
+	for f in sim.figures:
+		for p in [f.slot_a, f.slot_b]:
+			check(p.x >= r and p.x <= sim.width - r and p.y >= r and p.y <= sim.height - r, "%s slot end %s inside the rink" % [f.role, p])
+
+
+func test_slide_is_speed_limited_and_clamped() -> void:
+	var sim := TableSim.new()
+	var f := _fig(sim, 0, "center")
+	var start := f.s
+	f.set_input(100000.0, false, 0.0)
+	check_eq(f.target_s, f.slot_len, "target clamps to the end of the slot")
+	f.step(DT, sim.cfg)
+	check(absf(f.s - start - float(sim.cfg.max_slide_speed) * DT) < 0.01, "slide limited to max speed in one tick")
+
+
+func test_skaters_spin_a_full_turn_and_keep_spinning() -> void:
+	var sim := TableSim.new()
+	var f := _fig(sim, 0, "left_wing")
+	var start := f.angle
+	for i in 30:
+		f.set_input(f.s, true, start + TAU * 1.5)
+		f.step(DT, sim.cfg)
+	check(f.angle - start > TAU, "a skater can spin more than 360 degrees")
+	f.set_input(f.s, true, f.angle + 10.0)
+	f.step(DT, sim.cfg)
+	f.set_input(f.s, false, 0.0)
+	var spinning := f.ang_vel
+	f.step(DT, sim.cfg)
+	check(f.ang_vel > 0.0 and f.ang_vel < spinning, "a released skater keeps spinning and slows down")
+
+
+func test_goalie_does_not_spin() -> void:
+	var sim := TableSim.new()
+	var g := _fig(sim, 0, "goalie")
+	var start := g.angle
+	for i in 20:
+		g.set_input(g.s, true, start + 5.0)
+		g.step(DT, sim.cfg)
+	check_eq(g.angle, start, "goalie only slides")
 
 
 func test_side_wall_bounce() -> void:
 	var sim := TableSim.new()
-	sim.puck_pos = Vector2(40, 400)
+	sim.puck_pos = Vector2(40, 380)
 	sim.puck_vel = Vector2(-800, 0)
 	_step(sim, 10)
 	check(sim.puck_vel.x > 0.0, "puck bounces off the left wall")
@@ -73,10 +136,8 @@ func test_corner_keeps_puck_inside() -> void:
 
 func test_shot_into_open_goal_scores() -> void:
 	var sim := TableSim.new()
-	var g := _goalie(sim, 1)
-	g.x = g.x_range
-	g.target_x = g.x_range
-	sim.puck_pos = Vector2(sim.center_x, 45)
+	_park(_fig(sim, 1, "goalie"), 0.0)
+	sim.puck_pos = Vector2(sim.center_x, 35)
 	sim.puck_vel = Vector2(0, -900)
 	var scored := -1
 	for i in 30:
@@ -87,12 +148,12 @@ func test_shot_into_open_goal_scores() -> void:
 		if scored != -1:
 			break
 	check_eq(scored, 0, "bottom team scores in the top goal")
-	check(not sim.puck_active, "puck is taken off the table after a goal")
+	check(not sim.puck_active, "puck is taken off the ice after a goal")
 
 
 func test_shot_wide_of_goal_bounces() -> void:
 	var sim := TableSim.new()
-	sim.puck_pos = Vector2(sim.center_x + 160, 45)
+	sim.puck_pos = Vector2(sim.center_x + 140, 30)
 	sim.puck_vel = Vector2(0, -900)
 	var goal := false
 	for i in 20:
@@ -105,8 +166,8 @@ func test_shot_wide_of_goal_bounces() -> void:
 
 func test_goalie_blocks_straight_shot() -> void:
 	var sim := TableSim.new()
-	var g := _goalie(sim, 1)
-	sim.puck_pos = Vector2(sim.center_x, 200)
+	var g := _fig(sim, 1, "goalie")
+	sim.puck_pos = Vector2(sim.center_x, 130)
 	sim.puck_vel = Vector2(0, -1000)
 	var goal := false
 	for i in 40:
@@ -115,66 +176,79 @@ func test_goalie_blocks_straight_shot() -> void:
 		for e in sim.events:
 			goal = goal or e.type == "goal"
 	check(not goal, "centered goalie stops a straight shot")
-	check(sim.puck_pos.y > g.y, "puck ends up in front of the goalie")
+	check(sim.puck_pos.y > g.pos().y, "puck ends up in front of the goalie")
 
 
-func test_forward_swing_shoots_puck_up_table() -> void:
+func test_spinning_stick_fires_the_puck() -> void:
 	var sim := TableSim.new()
-	var fwd := sim.team_rods(0)[2]
-	var fig := fwd.figure_pos(1, sim.center_x)
-	sim.puck_pos = fig + Vector2(0, -(sim.cfg.figure_radius + sim.cfg.puck_radius + 20))
+	var c := _fig(sim, 0, "center")
+	_park(_fig(sim, 1, "center"), 0.0)
+	c.angle = 0.0
+	# Puck just past the stick, in the direction a backward (negative) spin sweeps.
+	var r := Vector2(cos(-0.6), sin(-0.6)) * 40.0
+	sim.puck_pos = c.pos() + r
 	sim.puck_vel = Vector2.ZERO
-	# Move the opposing forwards so the shooting lane is open.
-	var other := sim.team_rods(1)[2]
-	other.x = other.x_range
-	other.target_x = other.x_range
-	fwd.angle = -0.6
 	var fastest := 0.0
-	for i in 8:
-		fwd.set_input(fwd.x, true, 1.35)
+	for i in 10:
+		c.set_input(c.s, true, c.angle - 3.0)
 		sim.step(DT)
-		fastest = minf(fastest, sim.puck_vel.y)
+		fastest = maxf(fastest, sim.puck_vel.length())
 		check(sim.puck_vel.length() <= sim.cfg.puck_max_speed + 0.01, "shot speed is capped")
-	check(fastest < -500.0, "a forward swing fires the puck toward the opponent (vy=%.0f)" % fastest)
+	check(fastest > 500.0, "a spinning stick fires the puck (%.0f)" % fastest)
+	check(sim.puck_vel.y < 0.0, "the sweep sends it up the ice")
+
+
+func test_body_slide_pushes_puck() -> void:
+	var sim := TableSim.new()
+	var w := _fig(sim, 0, "left_wing")
+	w.angle = 0.0
+	sim.puck_pos = w.pos() + Vector2(0, -32)
+	sim.puck_vel = Vector2.ZERO
+	for i in 6:
+		w.set_input(w.slot_len, true, 0.0)
+		sim.step(DT)
+	check(sim.puck_vel.y < -300.0, "a skater pushed up its slot drives the puck ahead (vy=%.0f)" % sim.puck_vel.y)
 
 
 func test_pinched_puck_does_not_explode() -> void:
 	var sim := TableSim.new()
-	var fwd := sim.team_rods(0)[2]
-	var other := sim.team_rods(1)[2]
-	var touch: float = sim.cfg.figure_radius + sim.cfg.puck_radius
-	sim.puck_pos = Vector2(sim.center_x, other.y + touch + 1.0)
+	var a := _fig(sim, 0, "center")
+	var b := _fig(sim, 1, "center")
+	# Bring both centers level, with the puck squeezed between their bodies.
+	_park(a, a.slot_len * 0.65)
+	b.s = (b.slot_a - Vector2(0, a.pos().y)).y * -b.slot_dir.y
+	b.target_s = b.s
+	sim.puck_pos = (a.pos() + b.pos()) * 0.5
 	sim.puck_vel = Vector2.ZERO
-	fwd.angle = 1.35
-	other.angle = -1.35
+	a.angle = PI
+	b.angle = 0.0
 	for i in 30:
-		fwd.set_input(fwd.x, true, 1.35)
-		other.set_input(other.x, true, -1.35)
+		a.set_input(a.slot_len, true, PI)
+		b.set_input(b.slot_len, true, 0.0)
 		sim.step(DT)
-	check(sim.puck_vel.length() < 400.0, "a pinched puck stays calm (speed %.0f)" % sim.puck_vel.length())
+	check(sim.puck_vel.length() < 1200.0, "a pinched puck stays sane (speed %.0f)" % sim.puck_vel.length())
 
 
-func test_slow_puck_rolls_toward_a_rod() -> void:
+func test_slow_puck_drifts_toward_a_slot() -> void:
 	var sim := TableSim.new()
-	var defense := sim.team_rods(0)[1]
-	sim.puck_pos = Vector2(sim.center_x, defense.y - 60)
+	sim.puck_pos = Vector2(170, 300)
 	sim.puck_vel = Vector2.ZERO
-	var start_gap := _gap_to_nearest_rod(sim)
-	_step(sim, 90)
-	check(_gap_to_nearest_rod(sim) < start_gap, "table slope pulls a resting puck toward the figures")
+	var start := _gap_to_nearest_slot(sim)
+	_step(sim, 60)
+	check(_gap_to_nearest_slot(sim) < start, "table slope pulls a resting puck toward the slots")
 
 
-func _gap_to_nearest_rod(sim: TableSim) -> float:
+func _gap_to_nearest_slot(sim: TableSim) -> float:
 	var best := INF
-	for rod in sim.rods:
-		best = minf(best, absf(rod.y - sim.puck_pos.y))
+	for f in sim.figures:
+		best = minf(best, sim.puck_pos.distance_to(Geometry2D.get_closest_point_to_segment(sim.puck_pos, f.slot_a, f.slot_b)))
 	return best
 
 
 func test_still_puck_reports_stall() -> void:
 	var sim := TableSim.new()
-	var defense := sim.team_rods(0)[1]
-	sim.puck_pos = Vector2(sim.center_x, defense.y)
+	# On a wing's slot line, far from every figure.
+	sim.puck_pos = Vector2(85, 300)
 	sim.puck_vel = Vector2.ZERO
 	var stalled := false
 	for i in int(sim.cfg.stall_seconds * 60) + 10:
@@ -201,8 +275,8 @@ func test_random_play_keeps_puck_in_bounds() -> void:
 		var inputs := []
 		for team in 2:
 			var t := []
-			for rod in sim.team_rods(team):
-				t.append([rng.randf_range(-rod.x_range, rod.x_range), rng.randf() < 0.5, rng.randf_range(-1.4, 1.4)])
+			for f in sim.team_figures(team):
+				t.append([rng.randf_range(0, f.slot_len), rng.randf() < 0.5, f.angle + rng.randf_range(-3.0, 3.0)])
 			inputs.append(t)
 		sim.events.clear()
 		sim.apply_inputs(inputs)
@@ -223,10 +297,10 @@ func test_state_round_trip() -> void:
 	var a := TableSim.new()
 	a.puck_pos = Vector2(123, 456)
 	a.puck_vel = Vector2(7, -8)
-	a.rods[3].x = 12.5
-	a.rods[3].angle = 0.4
+	a.figures[3].s = 12.5
+	a.figures[3].angle = 4.4
 	var b := TableSim.new()
 	b.from_state(a.to_state())
 	check_eq(b.puck_pos, a.puck_pos, "puck position survives a round trip")
-	check_eq(b.rods[3].x, 12.5, "rod position survives a round trip")
-	check_eq(b.rods[3].angle, 0.4, "rod angle survives a round trip")
+	check_eq(b.figures[3].s, 12.5, "slot position survives a round trip")
+	check_eq(b.figures[3].angle, 4.4, "stick angle survives a round trip")

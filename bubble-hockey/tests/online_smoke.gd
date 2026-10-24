@@ -68,16 +68,17 @@ func _host() -> void:
 	_check(await _wait_for(func(): return _main._game != null, 15.0), "match starts when the friend joins")
 	var game: GameScreen = _main._game
 	await _wait(4.0)
-	_check(game._remote_input != null, "receives the guest's rod input")
-	var guest_fwd: Rod = game.match_.sim.team_rods(1)[2]
-	_check(absf(guest_fwd.x) > 10.0, "guest's drag moved their rod on the host (x=%.1f)" % guest_fwd.x)
+	_check(game._remote_input != null, "receives the guest's input")
+	var guest_center: Figure = game.match_.sim.team_figures(1)[3]
+	var home: float = guest_center.slot_len * 0.65
+	_check(guest_center.s > home + 20.0, "guest's drag skated their center forward on the host (s=%.0f, home %.0f)" % [guest_center.s, home])
 	_check(game._rtt_ms >= 0 and game._rtt_ms < 500, "ping round trip measured (%d ms)" % game._rtt_ms)
 	await _shot("online_host")
 	_check(await _wait_for(func(): return game._waiting_for_peer, 8.0), "pauses and waits when the guest drops")
-	var frozen_puck := game.match_.sim.puck_pos
 	_check(await _wait_for(func(): return not game._waiting_for_peer, 10.0), "resumes when the guest rejoins")
+	var tick_before := game._tick
 	await _wait(1.0)
-	_check(game.match_.sim.puck_pos != frozen_puck or game.match_.phase != Match.Phase.PLAYING, "match is running again")
+	_check(game._tick > tick_before + 30, "match is running again")
 
 	# End the match, rematch, then the guest quits for good.
 	await _wait(1.0)
@@ -109,17 +110,18 @@ func _guest() -> void:
 	await _wait(2.0)
 	_check(game._snapshots.size() > 5, "receives host snapshots (%d buffered)" % game._snapshots.size())
 
-	# Drag our forward rod sideways and make sure our own view reacts at once.
-	var fwd: Rod = game._predicted.team_rods(1)[2]
-	var grab: Vector2 = game.view.get_global_transform_with_canvas() * Vector2(game.match_.sim.center_x, fwd.y)
+	# Skate our center up the ice (up the screen) and check our own view
+	# reacts at once.
+	var center: Figure = game._predicted.team_figures(1)[3]
+	var start_s := center.s
+	var grab: Vector2 = game.view.camera.unproject_position(game.view.to_world(center.pos()))
 	_touch(grab, true)
 	for i in 10:
-		_drag(grab + Vector2(-12 * i, 0))
+		_drag(grab + Vector2(0, -12 * i))
 		await get_tree().process_frame
-	_touch(grab + Vector2(-120, 0), false)
+	_touch(grab + Vector2(0, -120), false)
 	await _wait(0.3)
-	# Dragging left on a flipped screen is +x on the table.
-	_check(fwd.x > 10.0, "local prediction moves our rod immediately (x=%.1f)" % fwd.x)
+	_check(center.s > start_s + 20.0, "local prediction skates our center immediately (s %.0f -> %.0f)" % [start_s, center.s])
 	await _wait(1.5)
 	await _shot("online_guest")
 	_check(game.match_.time_left < 180.0 or game.match_.rules.mode == "goals", "clock is running from host state")

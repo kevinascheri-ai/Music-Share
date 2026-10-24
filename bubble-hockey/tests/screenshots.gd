@@ -65,22 +65,24 @@ func _run() -> void:
 	await _frames(150)
 	await _shot("06_game_ai")
 
-	# Grab our forward rod and wind up, then flick forward.
+	# Grab our center, skate it forward, then flick sideways to spin a shot.
 	var game: GameScreen = _main._game
-	var fwd: Rod = game.match_.sim.team_rods(0)[2]
-	var grab: Vector2 = game.view.get_global_transform_with_canvas() * Vector2(game.match_.sim.center_x, fwd.y)
+	var center: Figure = game.match_.sim.team_figures(0)[3]
+	var grab: Vector2 = game.view.camera.unproject_position(game.view.to_world(center.pos()))
 	_touch(0, grab, true)
 	await _frames(2)
 	for i in 6:
-		_drag(0, grab + Vector2(-8 * i, 9 * i))
+		_drag(0, grab + Vector2(0, -10 * i))
 		await _frames(1)
-	await _shot("07_windup_held")
+	await _shot("07_held")
 	for i in 4:
-		_drag(0, grab + Vector2(-48, 54 - 40 * i))
+		_drag(0, grab + Vector2(30 * i, -60))
 		await _frames(1)
-	await _shot("08_swing")
+	await _shot("08_spin")
 	_touch(0, grab, false)
-	print("rod after drag: x=%.1f angle=%.2f" % [fwd.x, fwd.angle])
+	print("figure after drag: s=%.1f angle=%.2f" % [center.s, center.angle])
+	await _frames(50)
+	await _shot("08b_play")
 
 	game._toggle_pause()
 	await _shot("09_pause")

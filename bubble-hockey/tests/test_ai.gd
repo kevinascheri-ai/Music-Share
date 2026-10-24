@@ -43,9 +43,9 @@ func test_ai_respects_its_slide_speed() -> void:
 	m.tick(DT, [null, null])
 	var before: Array = ai.compute(m, DT)
 	var after: Array = ai.compute(m, DT)
-	var cap: float = m.sim.cfg.rod_max_slide_speed * d.easy.slide_speed * DT + 0.001
+	var cap: float = m.sim.cfg.max_slide_speed * d.easy.slide_speed * DT + 0.001
 	for i in before.size():
-		check(absf(after[i][0] - before[i][0]) <= cap, "rod %d target moves at most the easy slide cap" % i)
+		check(absf(after[i][0] - before[i][0]) <= cap, "figure %d target moves at most the easy slide cap" % i)
 
 
 func test_ai_vs_ai_produces_goals_and_finishes() -> void:

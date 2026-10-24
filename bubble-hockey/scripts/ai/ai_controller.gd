@@ -1,25 +1,26 @@
 class_name AIController
 extends RefCounted
-## Rule-based computer opponent. Each rod tracks the puck as the AI saw it
-## `reaction_delay` seconds ago, slides at a capped speed, aims with some
-## error, and swings when the puck sits in front of a figure. Difficulty is
-## only the numbers in config/difficulty.json; there is no cheating.
+## Rule-based computer opponent. Each figure works from the puck as the AI
+## saw it `reaction_delay` seconds ago, slides along its slot at a capped
+## speed to line up a shot, and spins when the puck is in reach. The spin
+## direction is always the one that sweeps the stick toward the opponent's
+## goal. Difficulty is only the numbers in config/difficulty.json.
 
-enum Shot { IDLE, WINDUP, STRIKE, RECOVER }
+enum Shot { IDLE, STRIKE, RECOVER }
 
-const WINDUP_ANGLE := -0.8
-const WINDUP_TIME := 0.09
-const STRIKE_TIME := 0.22
-const RECOVER_TIME := 0.25
-const OPPORTUNITY_COOLDOWN := 0.35
+const STRIKE_TIME := 0.32
+const RECOVER_TIME := 0.2
+const OPPORTUNITY_COOLDOWN := 0.3
+## How long the AI looks ahead when it reads the play.
+const LOOKAHEAD := 0.18
 
 var team: int
 var params: Dictionary
 var rng := RandomNumberGenerator.new()
 var _time := 0.0
-## Ring of [time, pos, vel] samples of the puck, oldest first.
+## Ring of [time, pos, vel, active] samples of the puck, oldest first.
 var _history: Array = []
-var _rod_state: Array = []
+var _state: Array = []
 var _targets: Array = []
 
 
@@ -37,17 +38,17 @@ func _init(p_team: int, p_params: Dictionary, p_seed: int = 1) -> void:
 
 func reset() -> void:
 	_history.clear()
-	_rod_state.clear()
+	_state.clear()
 	_targets.clear()
 
 
 func compute(m: Match, dt: float) -> Array:
 	var sim := m.sim
-	var rods := sim.team_rods(team)
-	if _rod_state.is_empty():
-		for rod in rods:
-			_rod_state.append({"shot": Shot.IDLE, "t": 0.0, "cooldown": 0.0, "aim": 0.0})
-			_targets.append(rod.x)
+	var figs := sim.team_figures(team)
+	if _state.is_empty():
+		for f in figs:
+			_state.append({"shot": Shot.IDLE, "t": 0.0, "cooldown": 0.0, "aim": 0.0, "dir": 1.0, "goal": 0.0})
+			_targets.append(f.s)
 	_time += dt
 	_history.append([_time, sim.puck_pos, sim.puck_vel, sim.puck_active])
 	var delay: float = params.reaction_delay
@@ -57,102 +58,86 @@ func compute(m: Match, dt: float) -> Array:
 	var p: Vector2 = seen[1]
 	var v: Vector2 = seen[2]
 	var active: bool = seen[3]
+	var ahead := p + v * LOOKAHEAD * float(params.predict)
 
 	var cfg := sim.cfg
-	var stick: float = cfg.stick_length
-	var touch: float = cfg.figure_radius + cfg.puck_radius
-	var max_step: float = cfg.rod_max_slide_speed * float(params.slide_speed) * dt
-	var goal_y := 0.0 if team == 0 else sim.height
+	var reach: float = float(cfg.stick_length) + float(cfg.puck_radius) + 2.0
+	var max_step: float = float(cfg.max_slide_speed) * float(params.slide_speed) * dt
+	var goal := Vector2(sim.center_x, 0.0 if team == 0 else sim.height)
 	var out := []
 
-	for i in rods.size():
-		var rod: Rod = rods[i]
-		var st: Dictionary = _rod_state[i]
+	for i in figs.size():
+		var f: Figure = figs[i]
+		var st: Dictionary = _state[i]
 		st.cooldown = maxf(st.cooldown - dt, 0.0)
 		st.t += dt
 
-		var px := _predict_x(p, v, rod.y, sim) if active else sim.center_x
-		var in_front := (p.y - rod.y) * rod.forward_sign
-		var shooting_zone := active and in_front > 0.0 and in_front < stick + touch - 4.0
+		var want_s := f.s
+		if not active:
+			want_s = _closest_s(f, Vector2(sim.center_x, sim.height * 0.5))
+		elif f.is_goalie:
+			want_s = _closest_s(f, Vector2(_goalie_x(p, v, f, sim), f.pos().y))
+		else:
+			# Line up level with the puck, nudged so the stick's sweep at the
+			# contact point heads for the goal. aim_skill blends this in.
+			var to_goal := (goal - ahead).normalized()
+			var body := Vector2(f.pos().x, ahead.y)
+			if absf(to_goal.y) > 0.2:
+				body.y = ahead.y + (ahead.x - f.pos().x) * to_goal.x / to_goal.y * float(params.aim_skill)
+			want_s = _closest_s(f, body + Vector2(0, st.aim))
+		_targets[i] = move_toward(_targets[i], want_s, max_step)
 
-		# Aim: hit the puck slightly off-center so it heads for the goal.
-		var aim_x := px
-		if shooting_zone:
-			var to_goal := (Vector2(sim.center_x, goal_y) - p).normalized()
-			aim_x = p.x - to_goal.x * touch * float(params.aim_skill)
-		elif active and in_front < 0.0:
-			# The puck is behind this rod. Touching it now mostly makes own
-			# goals, so park a figure on the goal-mouth side of it: any
-			# accidental contact then pushes it toward the boards instead.
-			var side := signf(p.x - sim.center_x)
-			if side == 0.0:
-				side = 1.0
-			aim_x = p.x - side * (touch + 14.0)
-		aim_x += st.aim
-
-		var best_x := rod.x
-		var best_err := INF
-		var best_fig := 0
-		for f in rod.figure_offsets.size():
-			var want := clampf(aim_x - sim.center_x - rod.figure_offsets[f], -rod.x_range, rod.x_range)
-			var err := absf(aim_x - (sim.center_x + want + rod.figure_offsets[f]))
-			# Prefer figures that don't need a long slide to get there.
-			err += absf(want - rod.x) * 0.15
-			if err < best_err:
-				best_err = err
-				best_x = want
-				best_fig = f
-		_targets[i] = move_toward(_targets[i], best_x, max_step)
-
-		var fig_x := sim.center_x + rod.x + rod.figure_offsets[best_fig]
-		var lined_up := absf(p.x - fig_x) < touch + 2.0
 		var has_angle := false
-		var angle := 0.0
-
+		var angle := f.angle
+		var r := p - f.pos()
+		var in_reach := active and not f.is_goalie and r.length() < reach
 		match st.shot:
 			Shot.IDLE:
-				if shooting_zone and lined_up and st.cooldown <= 0.0:
+				if in_reach and st.cooldown <= 0.0:
 					st.cooldown = OPPORTUNITY_COOLDOWN
-					if rng.randf() < float(params.shot_chance):
-						st.shot = Shot.WINDUP
+					var tangent := Vector2(-r.y, r.x)
+					var dir := signf(tangent.dot(goal - p))
+					if dir != 0.0 and rng.randf() < float(params.shot_chance):
+						st.shot = Shot.STRIKE
 						st.t = 0.0
-						st.aim = rng.randf_range(-1.0, 1.0) * float(params.aim_error)
-			Shot.WINDUP:
-				has_angle = true
-				angle = WINDUP_ANGLE
-				if st.t >= WINDUP_TIME:
-					st.shot = Shot.STRIKE
-					st.t = 0.0
+						st.dir = dir
+						st.goal = f.angle + dir * TAU
 			Shot.STRIKE:
 				has_angle = true
-				var swing: float = cfg.rod_max_spin_speed * float(params.swing_speed) * dt
-				angle = rod.angle + swing
-				if rod.angle >= float(cfg.rod_angle_limit) - 0.05 or st.t >= STRIKE_TIME:
+				var swing: float = float(cfg.max_spin_speed) * float(params.swing_speed) * dt
+				angle = move_toward(f.angle, st.goal, swing)
+				if st.t >= STRIKE_TIME or is_equal_approx(angle, st.goal):
 					st.shot = Shot.RECOVER
 					st.t = 0.0
 			Shot.RECOVER:
 				if st.t >= RECOVER_TIME:
 					st.shot = Shot.IDLE
 					st.t = 0.0
-					st.aim = rng.randf_range(-1.0, 1.0) * float(params.aim_error) * 0.5
+					st.aim = rng.randf_range(-1.0, 1.0) * float(params.aim_error)
 
 		out.append([_targets[i], has_angle, angle])
 	return out
 
 
-## Where the puck will cross the rod's line, blended with where it is now by
-## the difficulty's `predict` value. Bounces off the side walls are folded in.
-func _predict_x(p: Vector2, v: Vector2, rod_y: float, sim: TableSim) -> float:
+## Slot position closest to a point.
+func _closest_s(f: Figure, target: Vector2) -> float:
+	return clampf((target - f.slot_a).dot(f.slot_dir), 0.0, f.slot_len)
+
+
+## Where the goalie should stand: where the puck will cross the goalie's
+## line, blended with where it is now by `predict`. Side-wall bounces are
+## folded in.
+func _goalie_x(p: Vector2, v: Vector2, f: Figure, sim: TableSim) -> float:
 	var predict: float = params.predict
+	var line_y := f.pos().y
 	if predict <= 0.0 or absf(v.y) < 1.0:
 		return p.x
-	var t := (rod_y - p.y) / v.y
+	var t := (line_y - p.y) / v.y
 	if t <= 0.0 or t > 1.0:
 		return p.x
 	var r: float = sim.cfg.puck_radius
-	var lo := r
 	var span := sim.width - 2.0 * r
-	var x := fposmod(p.x + v.x * t - lo, 2.0 * span)
+	var x := fposmod(p.x + v.x * t - r, 2.0 * span)
 	if x > span:
 		x = 2.0 * span - x
-	return lerpf(p.x, x + lo, predict)
+	return lerpf(p.x, x + r, predict)

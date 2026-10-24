@@ -13,15 +13,19 @@ what changed from the plan, and what's next are in [docs/STATUS.md](docs/STATUS.
 - **Online with a friend:** one player creates a game and shares a 5-character code, and the other joins with it. A dropped guest gets 30 seconds to rejoin.
 - **Match rules:** 3-minute games with sudden death on a tie, or first to 5 goals.
 - **Extras:** settings for sensitivity, sound, crowd noise and vibration, plus local win/loss stats and a first-run how-to-play screen.
-- **No asset files:** art is drawn with shapes and sound effects are synthesized at startup. Both are placeholders that are easy to swap out.
+- **3D table:** a lit 3D table under a glass dome, with grooved slots in the ice, a jumbotron, control rods sticking out of the cabinet ends, a puck that pops up at center ice, and goal-light and confetti effects.
+- **No asset files yet:** figures and props are built from shapes in code, and sound effects are synthesized at startup. Drop real models and art into `assets/` and they're used automatically (see [docs/ASSETS.md](docs/ASSETS.md)).
 
 ## Controls
 
-Your three rods are the rows nearest you: goalie, defense and forwards.
+Like a real bubble hockey table, each side has a goalie and five skaters (two
+defense, a center and two wings). Each skater rides a straight slot up and
+down the ice and spins a full 360 degrees. The goalie only slides side to side.
 
-- Touch a row and drag sideways to slide it.
-- Drag toward the other goal to swing your sticks. Pull back first, then flick forward for a hard shot.
-- Use two thumbs to work two rods at once. Held rods glow.
+- Touch near a player to grab it.
+- Drag along its slot to skate it forward or back (the rod's push and pull).
+- Drag sideways to spin it (the rod's twist). Flick sideways for a slapshot: the player keeps spinning after you let go.
+- Use two thumbs to work two players at once. Held players glow.
 
 ## Running it
 
@@ -47,7 +51,7 @@ the page.
 ## Tests
 
 ```bash
-# Game logic: physics, rules, AI, network message validation (36 tests)
+# Game logic: physics, rules, AI, network message validation (41 tests)
 godot --headless --path . --import          # first run only
 godot --headless --path . -s res://tests/run_tests.gd
 
@@ -112,9 +116,12 @@ Android needs no code changes. Add an Android export preset when you're ready.
 
 ```
 config/          table.json (layout + physics), difficulty.json (AI tuning)
-scripts/sim/     TableSim, Rod, Match: pure, deterministic game logic
+scripts/sim/     TableSim, Figure, Match: pure, deterministic game logic
 scripts/ai/      AIController: rule-based opponent
-scripts/game/    GameScreen (one match), TableView (drawing), TouchInput
+scripts/game/    GameScreen (one match), TouchInput
+scripts/view3d/  TableView3D (the 3D table), FigureModel (player models)
+shaders/         ice, dome glass, goal netting
+assets/          drop-in models and art (see docs/ASSETS.md)
 scripts/net/     Net autoload (relay client), NetCodec (message validation)
 scripts/core/    Settings and Sfx autoloads
 scripts/ui/      UIKit: theme and widget helpers

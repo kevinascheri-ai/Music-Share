@@ -1,6 +1,6 @@
 class_name TableSim
 extends RefCounted
-## Pure, deterministic table physics: puck, rods, walls, posts, goals.
+## Pure, deterministic table physics: puck, figures, walls, posts, goals.
 ## No nodes, no rendering, no randomness, so it can run in tests, on the
 ## online host, and on the device all from the same code.
 ##
@@ -18,14 +18,14 @@ var end_zone: float
 
 var puck_pos := Vector2.ZERO
 var puck_vel := Vector2.ZERO
-## False while the puck is "above the table": during a face-off countdown
-## and after a goal. An inactive puck doesn't move or collide.
+## False while the puck is off the ice: during a face-off countdown and after
+## a goal. An inactive puck doesn't move or collide.
 var puck_active := true
 var stall_time := 0.0
 
-## Team 0's rods first, then team 1's, each in config order.
-var rods: Array[Rod] = []
-var rods_per_team: int
+## Team 0's figures first, then team 1's, each in config order.
+var figures: Array[Figure] = []
+var figures_per_team: int
 ## Events from the steps since the caller last cleared them. Each is a
 ## Dictionary with a "type": "hit", "wall", "post", "goal", or "stall".
 var events: Array[Dictionary] = []
@@ -40,27 +40,22 @@ func _init(p_cfg: Dictionary = {}) -> void:
 	width = cfg.width
 	height = cfg.height
 	center_x = width * 0.5
-	rods_per_team = cfg.rods.size()
-	var nearest := 1.0
-	for r in cfg.rods:
-		nearest = minf(nearest, r.dist_from_goal)
-	end_zone = nearest * height
+	figures_per_team = cfg.figures.size()
+	# Behind the goalies' line the corners slope back toward the middle.
+	end_zone = height * 0.12
 	for team in TEAMS:
-		for r in cfg.rods:
-			var n: int = r.figures
-			var spacing := width / n
-			var y: float = height * (1.0 - r.dist_from_goal) if team == 0 else height * r.dist_from_goal
-			var x_range: float
-			if r.has("slide_range"):
-				x_range = r.slide_range
-			else:
-				x_range = center_x - cfg.figure_radius - 2.0 - (n - 1) * 0.5 * spacing
-			rods.append(Rod.new(team, r.role, y, n, x_range, spacing))
+		for f in cfg.figures:
+			var a := Vector2(f.from[0], f.from[1])
+			var b := Vector2(f.to[0], f.to[1])
+			if team == 1:
+				a = Vector2(width, height) - a
+				b = Vector2(width, height) - b
+			figures.append(Figure.new(team, f.role, a, b, f.get("home", 0.5), f.get("goalie", false)))
 	reset_puck()
 
 
-func team_rods(team: int) -> Array[Rod]:
-	return rods.slice(team * rods_per_team, (team + 1) * rods_per_team)
+func team_figures(team: int) -> Array[Figure]:
+	return figures.slice(team * figures_per_team, (team + 1) * figures_per_team)
 
 
 func reset_puck() -> void:
@@ -69,28 +64,41 @@ func reset_puck() -> void:
 	stall_time = 0.0
 
 
-## inputs[team] is an Array with one [target_x, has_angle, target_angle]
-## entry per rod, or null to leave that team's targets unchanged.
+## inputs[team] is an Array with one [target_s, has_angle, target_angle]
+## entry per figure, or null to leave that team's targets unchanged.
 func apply_inputs(inputs: Array) -> void:
 	for team in TEAMS:
 		if team >= inputs.size() or inputs[team] == null:
 			continue
 		var team_input: Array = inputs[team]
-		for i in mini(team_input.size(), rods_per_team):
+		for i in mini(team_input.size(), figures_per_team):
 			var e: Array = team_input[i]
-			rods[team * rods_per_team + i].set_input(e[0], e[1], e[2])
+			figures[team * figures_per_team + i].set_input(e[0], e[1], e[2])
 
 
 func step(dt: float) -> void:
 	var substeps: int = cfg.substeps
 	var h := dt / substeps
 	for s in substeps:
-		for rod in rods:
-			rod.step(h, cfg)
+		for f in figures:
+			f.step(h, cfg)
 		if puck_active:
 			_step_puck(h)
 			if not puck_active:
 				return
+
+
+## The capsules a figure collides with, as [a, b, radius]. A skater is its
+## body plus its stick; the goalie is one wide capsule.
+func figure_shapes(f: Figure) -> Array:
+	var p := f.pos()
+	if f.is_goalie:
+		var hw := Vector2(cfg.goalie_half_width, 0)
+		return [[p - hw, p + hw, float(cfg.goalie_radius)]]
+	return [
+		[p, p, float(cfg.figure_radius)],
+		[p, f.stick_tip(cfg.stick_length), float(cfg.stick_radius)],
+	]
 
 
 func _step_puck(h: float) -> void:
@@ -118,24 +126,29 @@ func _step_puck(h: float) -> void:
 		stall_time = 0.0
 
 
-## The real table is molded so the puck rolls toward the figures and out of
-## the corners. Only matters when the puck is slow, so it never bends a shot.
+## The playfield is molded so a slow puck drifts toward the slots, where a
+## figure can reach it, and out of the corners. Only matters when the puck is
+## slow, so it never bends a shot.
 func _apply_slope(h: float) -> void:
 	var speed := puck_vel.length()
 	var weight := clampf(1.0 - speed / 250.0, 0.0, 1.0)
 	if weight <= 0.0:
 		return
-	var nearest_dy := INF
-	for rod in rods:
-		var dy := rod.y - puck_pos.y
-		if absf(dy) < absf(nearest_dy):
-			nearest_dy = dy
+	var nearest := puck_pos
+	var best := INF
+	for f in figures:
+		var q := Geometry2D.get_closest_point_to_segment(puck_pos, f.slot_a, f.slot_b)
+		var d := q.distance_squared_to(puck_pos)
+		if d < best:
+			best = d
+			nearest = q
 	var accel := Vector2.ZERO
-	var dead_band: float = cfg.figure_radius + cfg.puck_radius
-	if absf(nearest_dy) > dead_band:
-		accel.y = signf(nearest_dy) * cfg.slope_accel
-	# Corners slope toward the goalie's lane, but stop short of the goal
-	# mouth so the table never rolls the puck into a net on its own.
+	var to_slot := nearest - puck_pos
+	var reach := float(cfg.figure_radius) + float(cfg.puck_radius)
+	if to_slot.length() > reach:
+		accel = to_slot.normalized() * float(cfg.slope_accel)
+	# Corners slope toward the middle, but stop short of the goal mouth so the
+	# table never rolls the puck into a net on its own.
 	if puck_pos.y < end_zone or puck_pos.y > height - end_zone:
 		var dx := puck_pos.x - center_x
 		if absf(dx) > cfg.goal_width * 0.5 + cfg.puck_radius:
@@ -144,29 +157,24 @@ func _apply_slope(h: float) -> void:
 
 
 func _collide_figures() -> void:
-	var stick: float = cfg.stick_length
-	var min_dist: float = cfg.figure_radius + cfg.puck_radius
 	var restitution: float = cfg.figure_restitution
+	var puck_r: float = cfg.puck_radius
 	# Contacts this substep, to spot a puck pinched between two figures.
 	var normals: Array[Vector2] = []
 	var contact_vels: Array[Vector2] = []
-	for rod in rods:
-		for i in rod.figure_offsets.size():
-			var a := rod.figure_pos(i, center_x)
-			var b := rod.stick_tip(i, center_x, stick)
-			var ab := b - a
-			var t := 0.0
-			var len_sq := ab.length_squared()
-			if len_sq > 0.0001:
-				t = clampf((puck_pos - a).dot(ab) / len_sq, 0.0, 1.0)
-			var q := a + ab * t
+	for f in figures:
+		for shape in figure_shapes(f):
+			var a: Vector2 = shape[0]
+			var b: Vector2 = shape[1]
+			var q := Geometry2D.get_closest_point_to_segment(puck_pos, a, b) if a != b else a
 			var d := puck_pos - q
 			var dist := d.length()
+			var min_dist: float = shape[2] + puck_r
 			if dist >= min_dist:
 				continue
-			var n := d / dist if dist > 0.0001 else Vector2(0, rod.forward_sign)
+			var n := d / dist if dist > 0.0001 else Vector2(0, f.forward_sign)
 			puck_pos = q + n * min_dist
-			var contact_vel := rod.point_velocity(t, stick)
+			var contact_vel := f.point_velocity(q)
 			normals.append(n)
 			contact_vels.append(contact_vel)
 			var rel := puck_vel - contact_vel
@@ -175,7 +183,7 @@ func _collide_figures() -> void:
 				rel -= (1.0 + restitution) * vn * n
 				puck_vel = (rel + contact_vel).limit_length(cfg.puck_max_speed)
 				if -vn > 60.0:
-					events.append({"type": "hit", "strength": -vn, "team": rod.team})
+					events.append({"type": "hit", "strength": -vn, "team": f.team})
 	# A puck squeezed between two figures would otherwise ping-pong between
 	# them at full speed. Let it ride along with the pair instead.
 	for a in normals.size():
@@ -272,8 +280,8 @@ func _goal(scoring_team: int) -> void:
 ## Compact state for network snapshots.
 func to_state() -> Array:
 	var r := []
-	for rod in rods:
-		r.append(rod.to_array())
+	for f in figures:
+		r.append(f.to_array())
 	return [[puck_pos.x, puck_pos.y, puck_vel.x, puck_vel.y], puck_active, r]
 
 
@@ -283,5 +291,5 @@ func from_state(s: Array) -> void:
 	puck_vel = Vector2(p[2], p[3])
 	puck_active = s[1]
 	var r: Array = s[2]
-	for i in mini(r.size(), rods.size()):
-		rods[i].from_array(r[i])
+	for i in mini(r.size(), figures.size()):
+		figures[i].from_array(r[i])

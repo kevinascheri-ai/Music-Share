@@ -17,13 +17,13 @@ func check_eq(actual, expected, msg: String) -> void:
 		failures.append("%s (expected %s, got %s)" % [msg, str(expected), str(actual)])
 
 
-## Inputs that hold every rod still at its current position.
+## Inputs that hold every figure still at its current slot position.
 func idle_inputs(sim: TableSim) -> Array:
 	var out := []
 	for team in TableSim.TEAMS:
 		var team_in := []
-		for rod in sim.team_rods(team):
-			team_in.append([rod.x, false, 0.0])
+		for f in sim.team_figures(team):
+			team_in.append([f.s, false, 0.0])
 		out.append(team_in)
 	return out
 

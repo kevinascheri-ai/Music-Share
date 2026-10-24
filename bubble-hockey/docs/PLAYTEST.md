@@ -11,28 +11,29 @@ Change one value at a time, play a few matches, and keep notes.
   minutes of action, not long stalls.
 - **Rematch rate:** if players stop after one game, ask them why.
 - **Frustration moments:** the puck stuck out of reach, shots that seem to
-  vanish, a rod that won't respond. Note where on the table each happened.
+  vanish, a player that won't respond. Note where on the table each happened.
 
 ## Symptoms and knobs (`config/table.json`)
 
 | Symptom | Try |
 |---|---|
-| Puck feels floaty and slides forever | raise `puck_friction` (0.35 → 0.5) |
+| Puck feels floaty and slides forever | raise `puck_friction` (0.3 → 0.45) |
 | Puck dies too quickly | lower `puck_friction` |
-| Shots too fast to react to | lower `puck_max_speed` (1700 → 1400) or `rod_max_spin_speed` |
-| Shots feel weak | raise `rod_max_spin_speed` or `figure_restitution` |
+| Shots too fast to react to | lower `puck_max_speed` (1800 → 1400) or `max_spin_speed` |
+| Shots feel weak | raise `max_spin_speed`, `stick_length` or `figure_restitution` |
 | Walls too bouncy or too dead | `wall_restitution` (0.8) |
-| Puck gets stuck between rods | raise `slope_accel`, or lower `stall_seconds` for faster re-drops |
+| Puck gets stuck between slots | raise `slope_accel`, or lower `stall_seconds` for faster re-drops |
 | Puck parks in corners | raise `corner_slope_accel` |
-| Sticks snap back too fast after a swing | lower `rod_spring` |
+| Players spin too long or too short after a flick | `spin_damping` |
+| Players skate too fast or too slow | `max_slide_speed` |
 | Hard to reach the puck | raise `stick_length` or `figure_radius` |
-| Too many or too few goals | `goal_width` (150), or move `dist_from_goal` for the goalie rod |
+| Too many or too few goals | `goal_width` (150), `goalie_half_width`, or the slot ends in `figures` |
 
 ## Touch feel (player settings, plus `scripts/game/touch_input.gd`)
 
-- **Slide sensitivity** (Settings, 0.5–2.0x): how far a rod slides per
-  finger movement. At 1.0x the figure tracks the finger.
-- **Swing sensitivity** (Settings, 0.5–2.0x): how much stick swing per
+- **Slide sensitivity** (Settings, 0.5–2.0x): how far a player skates per
+  finger movement along its slot. At 1.0x the figure tracks the finger.
+- **Swing sensitivity** (Settings, 0.5–2.0x): how much spin per sideways
   finger movement. The base rate is `SPIN_PER_PIXEL` in `touch_input.gd`.
 
 ## Computer opponent (`config/difficulty.json`)
@@ -54,9 +55,9 @@ checks that the levels still rank correctly.
 - [ ] First launch shows how-to-play, and it doesn't come back after "Got It".
 - [ ] Can score against Easy within the first match.
 - [ ] Hard feels beatable but tough.
-- [ ] Two-thumb play works (two rods at once).
+- [ ] Two-thumb play works (two players at once).
 - [ ] Pause works, and backgrounding the app pauses the game.
-- [ ] Pass & Play: both players can control their rods at the same time.
+- [ ] Pass & Play: both players can control their players at the same time.
 - [ ] Online: create, share code, join, play a full match, then rematch.
 - [ ] Online: turn on airplane mode for 10 seconds on the guest, reconnect, and keep playing.
 - [ ] Sound and vibration toggles work.
