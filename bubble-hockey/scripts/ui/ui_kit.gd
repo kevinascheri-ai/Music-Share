@@ -65,7 +65,8 @@ static func button(text: String, on_press: Callable, size := 32) -> Button:
 	b.add_theme_font_size_override("font_size", size)
 	b.pressed.connect(func():
 		Sfx.play("click")
-		on_press.call())
+		# Deferred: the action often replaces the screen this button is on.
+		on_press.call_deferred())
 	return b
 
 

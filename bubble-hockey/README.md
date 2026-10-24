@@ -34,6 +34,16 @@ run two copies of the game. Godot's **Debug > Customize Run Instances** can
 launch two at once. Leave the server address in Settings at
 `ws://127.0.0.1:8787`.
 
+## Playing in a browser
+
+The **Web** export preset builds a browser version, which is handy on an iPad
+or for sharing a test build. Online play needs the relay to be reachable from
+the page.
+
+1. Install the web templates (part of Godot's export templates).
+2. Run `godot --headless --path . --export-release "Web" export/web/index.html`.
+3. Serve `export/web/` over HTTP. Opening the file directly won't work.
+
 ## Tests
 
 ```bash
