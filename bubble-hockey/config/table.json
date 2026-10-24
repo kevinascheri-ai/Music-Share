@@ -1,0 +1,30 @@
+{
+	"_comment": "Table layout and physics constants. Units are table pixels and seconds. Every value is a starting guess to be tuned in playtests.",
+	"width": 600,
+	"height": 1100,
+	"corner_radius": 70,
+	"goal_width": 150,
+	"post_radius": 6,
+	"puck_radius": 14,
+	"puck_max_speed": 1700,
+	"puck_friction": 0.35,
+	"wall_restitution": 0.8,
+	"figure_restitution": 0.55,
+	"figure_radius": 17,
+	"stick_length": 62,
+	"slope_accel": 90,
+	"corner_slope_accel": 120,
+	"rod_max_slide_speed": 1500,
+	"rod_max_spin_speed": 24,
+	"rod_angle_limit": 1.35,
+	"rod_spring": 60,
+	"rod_damping": 9,
+	"substeps": 4,
+	"stall_speed": 25,
+	"stall_seconds": 3.0,
+	"rods": [
+		{ "role": "goalie", "dist_from_goal": 0.075, "figures": 1, "slide_range": 95 },
+		{ "role": "defense", "dist_from_goal": 0.27, "figures": 2 },
+		{ "role": "forward", "dist_from_goal": 0.42, "figures": 3 }
+	]
+}

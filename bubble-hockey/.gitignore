@@ -1,0 +1,6 @@
+# Godot
+.godot/
+export/
+*.ipa
+*.apk
+*.aab

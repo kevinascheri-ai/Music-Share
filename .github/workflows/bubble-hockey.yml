@@ -1,0 +1,50 @@
+name: Bubble Hockey
+
+on:
+  push:
+    paths:
+      - "bubble-hockey/**"
+      - ".github/workflows/bubble-hockey.yml"
+  pull_request:
+    paths:
+      - "bubble-hockey/**"
+      - ".github/workflows/bubble-hockey.yml"
+
+jobs:
+  game-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bubble-hockey
+    env:
+      GODOT_VERSION: 4.6.1-stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip -d "$RUNNER_TEMP/godot"
+          echo "$RUNNER_TEMP/godot" >> "$GITHUB_PATH"
+          ln -s "$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}_linux.x86_64" "$RUNNER_TEMP/godot/godot"
+          rm godot.zip
+      - name: Import project
+        run: godot --headless --path . --import
+      - name: Unit tests
+        run: godot --headless --path . -s res://tests/run_tests.gd
+      - name: Main scene boots without script errors
+        run: |
+          godot --headless --path . --quit-after 300 2>&1 | tee boot.log
+          ! grep -E "SCRIPT ERROR|Parse Error" boot.log
+
+  relay-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bubble-hockey/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test

@@ -1,0 +1,33 @@
+{
+	"_comment": "Computer opponent tuning. reaction_delay is seconds of lag on what the AI sees, slide_speed is a fraction of the rod's max speed, aim_error is pixels of random offset, shot_chance is the probability per opportunity of taking a shot, aim_skill blends between a straight hit (0) and aiming at the goal (1), predict blends between chasing the puck (0) and reading where it will be (1).",
+	"easy": {
+		"label": "Easy",
+		"reaction_delay": 0.32,
+		"slide_speed": 0.38,
+		"aim_error": 34,
+		"shot_chance": 0.35,
+		"aim_skill": 0.0,
+		"predict": 0.0,
+		"swing_speed": 0.55
+	},
+	"medium": {
+		"label": "Medium",
+		"reaction_delay": 0.17,
+		"slide_speed": 0.62,
+		"aim_error": 16,
+		"shot_chance": 0.7,
+		"aim_skill": 0.5,
+		"predict": 0.5,
+		"swing_speed": 0.8
+	},
+	"hard": {
+		"label": "Hard",
+		"reaction_delay": 0.07,
+		"slide_speed": 0.9,
+		"aim_error": 6,
+		"shot_chance": 0.95,
+		"aim_skill": 0.9,
+		"predict": 1.0,
+		"swing_speed": 1.0
+	}
+}
